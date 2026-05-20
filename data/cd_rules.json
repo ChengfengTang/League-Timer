@@ -1,0 +1,142 @@
+[
+  {
+    "champion": "Zoe",
+    "ability": "E",
+    "cd_trigger": "on_hit",
+    "cd_delay_secs": 0,
+    "note": "Sleepy Trouble Bubble goes on cooldown when it hits or expires, not on cast."
+  },
+  {
+    "champion": "Jhin",
+    "ability": "R",
+    "cd_trigger": "after_duration",
+    "cd_delay_secs": 10,
+    "note": "Curtain Call channel; cooldown typically starts after the ult window ends."
+  },
+  {
+    "champion": "Varus",
+    "ability": "Q",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "Piercing Arrow cooldown starts when the channel ends (release or max charge)."
+  },
+  {
+    "champion": "Xerath",
+    "ability": "R",
+    "cd_trigger": "after_duration",
+    "cd_delay_secs": 10,
+    "note": "Rite of the Arcane cooldown starts after the bombardment sequence."
+  },
+  {
+    "champion": "Fiddlesticks",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 1.5,
+    "note": "Crowstorm channel before damage; CD often counted from channel end."
+  },
+  {
+    "champion": "TwistedFate",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Gate cooldown starts on cast."
+  },
+  {
+    "champion": "Shen",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Stand United CD starts on cast."
+  },
+  {
+    "champion": "Yuumi",
+    "ability": "W",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "You and Me has no traditional cooldown when hopping to allies."
+  },
+  {
+    "champion": "Karthus",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 3,
+    "note": "Requiem channel; CD starts after channel completes."
+  },
+  {
+    "champion": "Nunu",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "Absolute Zero CD starts when channel ends (cancel or complete)."
+  },
+  {
+    "champion": "MissFortune",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "Bullet Time CD starts when channel ends."
+  },
+  {
+    "champion": "Katarina",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "Death Lotus CD starts when channel ends."
+  },
+  {
+    "champion": "Lucian",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "The Culling CD starts when channel ends."
+  },
+  {
+    "champion": "Samira",
+    "ability": "R",
+    "cd_trigger": "after_channel",
+    "cd_delay_secs": 0,
+    "note": "Inferno Trigger CD starts when ult ends."
+  },
+  {
+    "champion": "Ezreal",
+    "ability": "E",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Arcane Shift CD starts on cast."
+  },
+  {
+    "champion": "Ahri",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Spirit Rush stores charges; each dash consumes a charge with its own recharge timer."
+  },
+  {
+    "champion": "Ahri",
+    "ability": "E",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Charm CD starts on cast."
+  },
+  {
+    "champion": "Zed",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Death Mark CD starts on cast."
+  },
+  {
+    "champion": "Yasuo",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Last Breath CD starts on cast."
+  },
+  {
+    "champion": "Viego",
+    "ability": "R",
+    "cd_trigger": "on_cast",
+    "cd_delay_secs": 0,
+    "note": "Heartbreaker CD starts on cast."
+  }
+]
