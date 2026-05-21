@@ -22,9 +22,10 @@ dist-ssr
 .env
 .env.local
 
-# Database (regenerate with npm run ingest)
-db/league.db
+# Session DB (runtime)
+db/session.db
 src-tauri/db/
 
-# Tauri
-src-tauri/target
+# Generated spell data — run npm run ingest
+data/spells.json
+public/spells.json

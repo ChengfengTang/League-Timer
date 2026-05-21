@@ -1,5 +1,26 @@
 export type TimerStatus = "idle" | "ticking" | "ready";
 
+export interface SpellData {
+  name: string;
+  cooldowns: number[];
+  cd_trigger: string;
+  cd_delay_secs: number;
+}
+
+export interface ChampionSpells {
+  key: string;
+  aliases?: string[];
+  Q?: SpellData;
+  W?: SpellData;
+  E?: SpellData;
+  R?: SpellData;
+}
+
+export interface SpellsFile {
+  meta?: Record<string, string>;
+  champions: Record<string, ChampionSpells>;
+}
+
 export interface AbilityState {
   key: string;
   rank: number;
@@ -8,6 +29,7 @@ export interface AbilityState {
   effective_cd: number;
   base_cd: number;
   spell_name: string;
+  ends_at_ms?: number | null;
 }
 
 export interface ActiveChampion {
@@ -19,10 +41,14 @@ export interface ActiveChampion {
   abilities: AbilityState[];
 }
 
-export interface AppInfo {
-  db_path: string;
-  has_data: boolean;
-  ddragon_version: string | null;
+export interface VoiceAction {
+  action: string;
+  champion?: string;
+  ability?: string;
+  level?: number;
+  ability_haste?: number;
+  rank?: number;
+  confirm_hit?: boolean;
 }
 
 export interface AbilityReadyEvent {

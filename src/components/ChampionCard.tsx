@@ -1,59 +1,23 @@
-import { invoke } from "@tauri-apps/api/core";
+import { useGame } from "../context/GameContext";
 import type { ActiveChampion } from "../types";
 import { AbilityTimer } from "./AbilityTimer";
-
-const DDRAGON =
-  "https://ddragon.leagueoflegends.com/cdn/14.24.1/img/champion";
 
 interface Props {
   champion: ActiveChampion;
   compact?: boolean;
-  onUpdate: () => void;
+  patchVersion?: string | null;
 }
 
-export function ChampionCard({ champion, compact, onUpdate }: Props) {
-  const imgSrc = `${DDRAGON}/${champion.champion_key}.png`;
+function championImgId(name: string): string {
+  return name.replace(/\s+/g, "").replace(/'/g, "");
+}
 
-  const useAbility = async (ability: string) => {
-    await invoke("ability_used", {
-      championId: champion.id,
-      ability,
-      confirmHit: false,
-    });
-    onUpdate();
-  };
+export function ChampionCard({ champion, compact, patchVersion }: Props) {
+  const { engine } = useGame();
+  const patch = patchVersion ?? "14.24.1";
+  const imgSrc = `https://ddragon.leagueoflegends.com/cdn/${patch}/img/champion/${championImgId(champion.name)}.png`;
 
-  const resetAbility = async (ability: string) => {
-    await invoke("reset_ability", { championId: champion.id, ability });
-    onUpdate();
-  };
-
-  const setRank = async (ability: string, rank: number) => {
-    await invoke("set_ability_rank", {
-      championId: champion.id,
-      ability,
-      rank,
-    });
-    onUpdate();
-  };
-
-  const setLevel = async (level: number) => {
-    await invoke("set_level", { championId: champion.id, level });
-    onUpdate();
-  };
-
-  const setAh = async (ah: number) => {
-    await invoke("set_ability_haste", {
-      championId: champion.id,
-      abilityHaste: ah,
-    });
-    onUpdate();
-  };
-
-  const remove = async () => {
-    await invoke("remove_champion", { championId: champion.id });
-    onUpdate();
-  };
+  if (!engine) return null;
 
   return (
     <div
@@ -73,7 +37,9 @@ export function ChampionCard({ champion, compact, onUpdate }: Props) {
           }}
         />
         <div className="flex-1 min-w-0">
-          <h3 className={`font-semibold truncate ${compact ? "text-sm" : "text-lg"}`}>
+          <h3
+            className={`font-semibold truncate ${compact ? "text-sm" : "text-lg"}`}
+          >
             {champion.name}
           </h3>
           {!compact && (
@@ -85,7 +51,13 @@ export function ChampionCard({ champion, compact, onUpdate }: Props) {
                   min={1}
                   max={18}
                   value={champion.level}
-                  onChange={(e) => setLevel(Number(e.target.value))}
+                  onChange={(e) => {
+                    try {
+                      engine.setLevel(champion.id, Number(e.target.value));
+                    } catch {
+                      /* */
+                    }
+                  }}
                   className="w-12 bg-slate-800 border border-slate-600 rounded px-1"
                 />
               </label>
@@ -95,7 +67,16 @@ export function ChampionCard({ champion, compact, onUpdate }: Props) {
                   type="number"
                   min={0}
                   value={champion.ability_haste}
-                  onChange={(e) => setAh(Number(e.target.value))}
+                  onChange={(e) => {
+                    try {
+                      engine.setAbilityHaste(
+                        champion.id,
+                        Number(e.target.value),
+                      );
+                    } catch {
+                      /* */
+                    }
+                  }}
                   className="w-12 bg-slate-800 border border-slate-600 rounded px-1"
                 />
               </label>
@@ -105,22 +86,34 @@ export function ChampionCard({ champion, compact, onUpdate }: Props) {
         {!compact && (
           <button
             type="button"
-            onClick={remove}
+            onClick={() => engine.removeChampion(champion.id)}
             className="text-slate-500 hover:text-red-400 text-xs"
           >
             Remove
           </button>
         )}
       </div>
-      <div className="flex justify-center gap-2">
+      <div className="flex justify-center gap-2 flex-wrap">
         {champion.abilities.map((ab) => (
           <AbilityTimer
             key={ab.key}
             ability={ab}
             compact={compact}
-            onUse={() => useAbility(ab.key)}
-            onReset={() => resetAbility(ab.key)}
-            onRankChange={(r) => setRank(ab.key, r)}
+            onUse={() => {
+              try {
+                engine.abilityUsed(champion.id, ab.key);
+              } catch (e) {
+                console.error(e);
+              }
+            }}
+            onReset={() => engine.resetAbility(champion.id, ab.key)}
+            onRankChange={(r) => {
+              try {
+                engine.setAbilityRank(champion.id, ab.key, r);
+              } catch (e) {
+                console.error(e);
+              }
+            }}
           />
         ))}
       </div>

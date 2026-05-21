@@ -7,28 +7,17 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "ingest": "tsx scripts/ingest-ddragon.ts",
-    "embeddings": "tsx scripts/build-embeddings.ts"
+    "ingest": "tsx scripts/ingest-ddragon.ts"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-global-shortcut": "^2",
-    "@tauri-apps/plugin-opener": "^2",
-    "dotenv": "^17.2.3",
-    "fuse.js": "^7.1.0",
-    "openai": "^6.8.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/cli": "^2",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
-    "better-sqlite3": "^12.4.1",
     "tailwindcss": "^4.1.18",
     "tsx": "^4.21.0",
     "typescript": "~5.8.3",
