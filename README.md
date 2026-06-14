@@ -1,117 +1,144 @@
-# League Timer (Web)
+# LoL Ability VFX Detector
 
-Fast League of Legends cooldown tracker in the browser. **No OpenAI, no API keys, no desktop app** — browser speech recognition + regex parsing + local timers.
+Detect a League of Legends champion's spell VFX (Q/W/E/R) from recorded gameplay
+video. The pipeline is config-driven: you train one champion at a time by
+recording footage, labelling ability casts by timestamp, fine-tuning a small
+video classifier (in the cloud), and then running a sliding-window recognizer
+over new video to emit timestamped ability events.
 
-## Stack
+> Scope of the MVP: one champion, all four abilities, offline recognition over
+> recorded video files. Live screen capture and multi-champion-on-screen are
+> deliberate non-goals (see "Roadmap").
 
-- **Vite + React** — runs in Chrome or Edge
-- **Web Speech API** — speech-to-text on-device (network only for Google’s STT backend in Chrome)
-- **Regex parser** — instant command matching
-- **`public/spells.json`** — champion CDs from Data Dragon (`npm run ingest`)
-- **localStorage** — session persistence
-- **speechSynthesis** — “Ahri E back up” announcements (instant, no API)
+## Pipeline at a glance
 
-## Prerequisites
+```
+record video -> annotate (timestamps) -> build clips -> train (cloud) -> recognize -> evaluate
+```
 
-- [Node.js](https://nodejs.org/) 20+
-- **Chrome or Edge** (recommended for voice)
+Each stage reads the same per-champion config (`configs/<champion>.yaml`), so the
+clip length / fps / classes stay consistent end to end.
 
-## Setup
+## Install
 
 ```bash
-npm install
-npm run ingest   # downloads CDs → data/spells.json + public/spells.json
-npm run dev      # http://localhost:5173
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
-Production build:
+`requirements.txt` lists `torch`/`torchvision` generically. Pick the build for
+your platform:
+
+- Mac (Apple Silicon, for inference): `pip install torch torchvision`
+- CUDA cloud GPU (for training): `pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121`
+
+## 1. Record gameplay
+
+Put recordings in `data/raw_videos/`. Guidelines that make labelling and training
+much easier:
+
+- **One champion per recording session** (the champion you're training).
+- **Consistent resolution and fps** across recordings; 1080p @ 30-60 fps is fine.
+  Higher fps captures fast VFX better but means more frames to read.
+- **Cast every ability many times** in varied situations: different targets,
+  different map locations, with/without minions and other champions around,
+  different times of day in-game, and ideally a couple of skins.
+- Aim for roughly **50-150 clean casts per ability** before expecting the model
+  to generalize. Short, dense clips (lots of casting) are better than long idle
+  footage.
+- Keep some footage aside, unlabelled-for-training, as a **held-out test video**.
+
+## 2. Annotate (timestamp labels)
+
+Scrub a video and press a key at the moment each ability is cast:
 
 ```bash
-npm run build
-npm run preview
+python -m src.annotate.annotate --config configs/ezreal.yaml \
+    --video data/raw_videos/ezreal_game1.mp4
 ```
 
-## Optional `.env`
+Controls are printed on launch (play/pause, frame step, seek, press `Q/W/E/R` to
+log a cast, undo, delete-near, save). Output goes to
+`data/annotations/<video_stem>.json`. Re-running on the same video resumes from
+the existing annotations.
 
-Only used by the ingest script:
+## 3. Build the clip dataset
+
+Turn timestamp events into fixed-length training clips (positives) plus sampled
+`background` windows (negatives), with a train/val split:
 
 ```bash
-cp .env.example .env
-# DDRAGON_VERSION=16.10.1   # optional patch pin
+python -m src.dataset.build --config configs/ezreal.yaml
 ```
 
-No API keys required to run the app.
+Writes clips under `data/clips/<champion>/` and a `manifest.json` describing the
+split. Clips are stored as `.npy` frame stacks so training doesn't re-decode
+video.
 
-## Voice commands (regex)
+## 4. Train (cloud GPU)
 
-Case-insensitive. Add the champion first: `add champion ahri`.
-
-### Level & ability haste
-
-| Say | Effect |
-|-----|--------|
-| `ahri level 11` | Set level |
-| `ahri ability haste 40` | Set ability haste |
-| `40 ability haste on ahri` | Same (alternate order) |
-
-### Abilities Q / W / E / R
-
-`used` and `no` both **start** the cooldown timer.
-
-| Say | Effect |
-|-----|--------|
-| `ahri used E` | Start E CD |
-| `ahri no W` | Start W CD |
-| `ahri E down` | Start E CD |
-| `ahri charm down` | Start by ability name |
-| `ahri E landed` | On-hit CD (e.g. Zoe E) |
-| `ahri E rank 3` | Set rank for base CD |
-| `ahri E back up` | Clear timer / mark ready |
-
-### Summoner spells
-
-| Say | Effect |
-|-----|--------|
-| `ahri used flash` | Flash CD (300s default) |
-| `ahri no ignite` | Ignite CD (180s) |
-
-Words: `flash`, `ignite`, `teleport` / `tp`, `ghost`, `heal`, `barrier`, `exhaust`, `cleanse`, `smite`.
-
-### Regex patterns (reference)
-
-```text
-^add champion (.+)$
-^remove (.+)$
-^(.+?) used ([QWER]|flash|ignite|teleport|tp|ghost|heal|barrier|exhaust|cleanse|smite)$
-^(.+?) no ([QWER]|flash|…)$
-^(.+?) ([QWER]) landed$
-^(.+?) ([QWER]) down$
-^(.+?) level (\d+)$
-^(.+?) ability haste (\d+)$
-^(\d+) ability haste(?: on)? (.+)$
-^(.+?) ([QWER]) rank (\d+)$
-^(.+?) ([QWER]) back up$
-^(.+?) (.+?) down$          # ability name, e.g. "ahri charm down"
-```
-
-Type the same phrases in the **Run** box to test without the mic.
-
-## Mic tips
-
-- Allow microphone permission when prompted
-- Hold **Hold to talk** — release when done; parsing runs on final transcript
-- Log shows `[parsed: regex]` on success
-
-## Data
+Train locally or, preferably, on a cloud GPU:
 
 ```bash
-npm run ingest   # refresh after patches
+python -m src.train.train --config configs/ezreal.yaml
 ```
 
-- [`data/spells.json`](data/spells.json) — source copy
-- [`public/spells.json`](public/spells.json) — served to the app
-- [`data/cd_rules.json`](data/cd_rules.json) — CD start rules merged at ingest
+Or open `notebooks/train_cloud.ipynb` in Colab / runpod, which clones the repo,
+installs deps, runs the same training, and saves the checkpoint. Checkpoints land
+in `models/<champion>/best.pt`. Training prints per-class precision/recall and a
+confusion matrix on the validation split.
 
-## License
+## 5. Recognize (sliding window over a video)
 
-MIT
+```bash
+python -m src.infer.recognize --config configs/ezreal.yaml \
+    --video data/raw_videos/ezreal_test.mp4 \
+    --checkpoint models/ezreal/best.pt \
+    --overlay
+```
+
+Outputs `outputs/<video_stem>.events.json` (list of `{ability, time, score}`)
+and, with `--overlay`, an annotated `.mp4` drawing detections for eyeballing.
+
+## 6. Evaluate
+
+Score predicted events against hand labels with a time tolerance:
+
+```bash
+python -m src.infer.evaluate --config configs/ezreal.yaml \
+    --pred outputs/ezreal_test.events.json \
+    --truth data/annotations/ezreal_test.json
+```
+
+Prints event-level precision / recall / F1 per ability. Use the misses to decide
+what extra footage to record.
+
+## Adding a new champion
+
+Copy `configs/ezreal.yaml` to `configs/<champion>.yaml`, adjust `champion` and
+(if the kit needs it) the class list and thresholds, then repeat steps 1-6.
+
+## Repo layout
+
+```
+configs/        per-champion YAML configs
+data/
+  raw_videos/   recorded gameplay (git-ignored)
+  annotations/  timestamp label JSON (git-ignored)
+  clips/        extracted training clips (git-ignored)
+src/
+  common/       config, video sampling, annotation schema
+  annotate/     timestamp annotation tool
+  dataset/      clip extraction + train/val split
+  train/        model + training loop
+  infer/        sliding-window recognizer + evaluation
+notebooks/      cloud training notebook
+models/         checkpoints (git-ignored)
+```
+
+## Roadmap (post-MVP)
+
+- Live recognition from screen capture (point the recognizer at a capture source).
+- Multiple champions on screen (add localization/cropping before classification).
+- Per-champion cropping driven by the minimap / HUD to reduce background noise.

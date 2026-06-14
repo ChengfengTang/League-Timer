@@ -1,0 +1,49 @@
+# Per-champion configuration. Add a new champion by copying this file.
+champion: ezreal
+
+# Class order matters: index = label id. `background` must be present.
+classes:
+  - background
+  - Q
+  - W
+  - E
+  - R
+
+# Clip sampling (used by the dataset builder and the recognizer)
+clip:
+  num_frames: 13        # frames per clip fed to the model (X3D-S default)
+  sample_fps: 13        # frames-per-second the clip is resampled to
+  # => each clip spans num_frames / sample_fps = ~1.0s of footage
+  crop_size: 182        # spatial size fed to the model (X3D-S default)
+
+# Dataset builder
+dataset:
+  # Positives: window centered on each labelled cast event.
+  positive_offset_sec: 0.0     # shift the window center relative to the cast keypress
+  # Negatives: random windows that don't overlap any event, per video.
+  negatives_per_video: 40
+  negative_min_gap_sec: 1.0    # min distance from any event to count as background
+  val_fraction: 0.2            # held-out fraction for validation
+  seed: 42
+
+# Training
+train:
+  backbone: x3d_s              # x3d_s | mobilenet_baseline
+  epochs: 25
+  batch_size: 8
+  lr: 0.0005
+  weight_decay: 0.0001
+  num_workers: 4
+  freeze_backbone_epochs: 3    # warm up the new head before unfreezing
+
+# Recognizer (sliding-window inference over a video file)
+infer:
+  stride_sec: 0.25             # how far the window advances each step
+  # Per-class confidence thresholds. Missing classes fall back to default.
+  default_threshold: 0.6
+  thresholds:
+    Q: 0.6
+    W: 0.6
+    E: 0.6
+    R: 0.6
+  nms_window_sec: 1.0          # suppress duplicate detections of the same ability within this window
