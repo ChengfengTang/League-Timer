@@ -3,6 +3,8 @@ data/raw_videos/*
 data/annotations/*
 data/clips/*
 models/*
+clips_*.zip
+*.zip
 !**/.gitkeep
 
 # Inference outputs

@@ -12,5 +12,10 @@ opencv-python>=4.8
 torch>=2.1
 torchvision>=0.16
 
+# x3d_s backbone (torch.hub loads facebookresearch/pytorchvideo)
+pytorchvideo>=0.1.5
+fvcore>=0.1.5
+iopath>=0.1.10
+
 # Metrics / reporting
 scikit-learn>=1.3

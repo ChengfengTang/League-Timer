@@ -38,12 +38,12 @@ train:
 
 # Recognizer (sliding-window inference over a video file)
 infer:
-  stride_sec: 0.25             # how far the window advances each step
+  stride_sec: 0.1              # finer scan — catches brief Q in combos (slower)
   # Per-class confidence thresholds. Missing classes fall back to default.
   default_threshold: 0.6
   thresholds:
-    Q: 0.6
+    Q: 0.45                    # Q VFX is subtle; lower bar helps in WQ combos
     W: 0.6
-    E: 0.6
+    E: 0.75                    # reduce flash false positives
     R: 0.6
-  nms_window_sec: 1.0          # suppress duplicate detections of the same ability within this window
+  nms_window_sec: 0.4          # allow W+Q detections closer together
