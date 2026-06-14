@@ -17,6 +17,24 @@ clip:
   # => each clip spans num_frames / sample_fps = ~1.0s of footage
   crop_size: 182        # spatial size fed to the model (X3D-S default)
 
+  # How a frame is fit to the square model input:
+  #   letterbox  - keep the WHOLE frame (aspect-preserving resize + pad). Needed
+  #                to detect enemy casts anywhere on screen, incl. the edges.
+  #   center_crop- legacy: resize short side then center-crop (drops the sides;
+  #                only safe when the thing you track is always centered, e.g.
+  #                your own champion).
+  frame_mode: letterbox
+  # Rectangles blacked out before the frame is used, as [x, y, w, h] fractions of
+  # the frame. Masks the player's own HUD so the model can't cheat off your
+  # cooldown sweep / mana flash (cues that don't exist for an enemy caster).
+  # Defaults target 1080p League; tune for your layout (set [] to disable).
+  hud_mask:
+    - [0.25, 0.87, 0.50, 0.13]   # bottom command bar (abilities / items / spells)
+    - [0.80, 0.66, 0.20, 0.34]   # minimap (bottom-right; ~25% larger than before)
+  # Train-time only: random zoom-in + reposition so casts are learned at many
+  # on-screen locations/scales (counteracts the centered-champion bias). 0 = off.
+  spatial_jitter: 0.15
+
 # Dataset builder
 dataset:
   # Positives: window centered on each labelled cast event.

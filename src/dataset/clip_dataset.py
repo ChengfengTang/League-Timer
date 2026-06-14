@@ -33,18 +33,62 @@ def _ensure_min_size(t: torch.Tensor, size: int) -> torch.Tensor:
 
 
 class ClipTransform:
-    """Crop + optional flip + per-channel normalization."""
+    """Spatial fit + optional flip/jitter + per-channel normalization.
+
+    Clips are expected to arrive already shaped by ``preprocess_clip`` for the
+    matching ``frame_mode``:
+
+    - ``letterbox``: frames are already ``crop_size`` x ``crop_size`` (whole frame
+      kept). At eval we just normalize; in train we apply ``spatial_jitter``
+      (random zoom-in + reposition) + optional hflip.
+    - ``center_crop`` (legacy): frames have their short side at ``crop_size``; we
+      center/random crop to a square as before.
+    """
 
     def __init__(self, crop_size: int, mean: Sequence[float], std: Sequence[float],
-                 train: bool, hflip: bool = True):
+                 train: bool, hflip: bool = True, frame_mode: str = "letterbox",
+                 spatial_jitter: float = 0.0):
         self.crop_size = crop_size
         self.train = train
         self.hflip = hflip
+        self.frame_mode = frame_mode
+        self.spatial_jitter = spatial_jitter
         self.mean = torch.tensor(mean).view(1, 3, 1, 1)
         self.std = torch.tensor(std).view(1, 3, 1, 1)
 
     def __call__(self, clip: np.ndarray) -> torch.Tensor:
         t = _to_tchw(clip)               # (T, C, H, W)
+        if self.frame_mode == "center_crop":
+            t = self._center_crop(t)
+        else:
+            t = self._letterbox(t)
+        if self.train and self.hflip and random.random() < 0.5:
+            t = torch.flip(t, dims=[3])
+        t = (t - self.mean) / self.std
+        return t.permute(1, 0, 2, 3).contiguous()   # (C, T, H, W)
+
+    def _letterbox(self, t: torch.Tensor) -> torch.Tensor:
+        size = self.crop_size
+        if self.train and self.spatial_jitter > 0:
+            # Zoom in by up to (1 + jitter) and take a random-position crop so the
+            # cast is seen at varied screen locations/scales.
+            scale = 1.0 + random.uniform(0.0, self.spatial_jitter)
+            _, _, h, w = t.shape
+            nh, nw = max(size, int(round(h * scale))), max(size, int(round(w * scale)))
+            t = torch.nn.functional.interpolate(
+                t, size=(nh, nw), mode="bilinear", align_corners=False)
+            top = random.randint(0, nh - size)
+            left = random.randint(0, nw - size)
+            t = t[:, :, top:top + size, left:left + size]
+        else:
+            t = _ensure_min_size(t, size)
+            _, _, h, w = t.shape
+            if (h, w) != (size, size):   # safety: center-fit unexpected sizes
+                top, left = (h - size) // 2, (w - size) // 2
+                t = t[:, :, top:top + size, left:left + size]
+        return t
+
+    def _center_crop(self, t: torch.Tensor) -> torch.Tensor:
         t = _ensure_min_size(t, self.crop_size)
         _, _, h, w = t.shape
         size = self.crop_size
@@ -54,11 +98,7 @@ class ClipTransform:
         else:
             top = (h - size) // 2
             left = (w - size) // 2
-        t = t[:, :, top:top + size, left:left + size]
-        if self.train and self.hflip and random.random() < 0.5:
-            t = torch.flip(t, dims=[3])
-        t = (t - self.mean) / self.std
-        return t.permute(1, 0, 2, 3).contiguous()   # (C, T, H, W)
+        return t[:, :, top:top + size, left:left + size]
 
 
 class VideoClipDataset(Dataset):

@@ -54,9 +54,12 @@ def sliding_window_scores(
     num_frames = int(ckpt["num_frames"])
     sample_fps = float(ckpt["sample_fps"])
     crop_size = int(ckpt["crop_size"])
+    frame_mode = str(ckpt.get("frame_mode", "center_crop"))
+    hud_mask = ckpt.get("hud_mask") or []
     clip_dur = num_frames / sample_fps
 
-    transform = ClipTransform(crop_size, ckpt["mean"], ckpt["std"], train=False)
+    transform = ClipTransform(crop_size, ckpt["mean"], ckpt["std"], train=False,
+                              frame_mode=frame_mode)
 
     lo = clip_dur / 2.0
     end_sec = vu.effective_duration_sec(video_path)
@@ -82,7 +85,8 @@ def sliding_window_scores(
     from tqdm import tqdm
     for c in tqdm(centers, desc="scanning"):
         clip = vu.sample_clip(video_path, center_sec=float(c), num_frames=num_frames,
-                              sample_fps=sample_fps, resize_short=crop_size)
+                              sample_fps=sample_fps, resize_short=None)
+        clip = vu.preprocess_clip(clip, crop_size, hud_mask=hud_mask, frame_mode=frame_mode)
         batch.append(transform(clip))
         batch_times.append(float(c))
         if len(batch) >= batch_size:

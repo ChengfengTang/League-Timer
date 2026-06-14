@@ -74,6 +74,21 @@ class Config:
         return int(self.raw.get("clip", {}).get("crop_size", 182))
 
     @property
+    def frame_mode(self) -> str:
+        """How a frame is fit to the square model input: 'letterbox' | 'center_crop'."""
+        return str(self.raw.get("clip", {}).get("frame_mode", "letterbox"))
+
+    @property
+    def hud_mask(self) -> List[List[float]]:
+        """Rects [x, y, w, h] (fractions) blacked out before use; [] if none."""
+        return [list(r) for r in (self.raw.get("clip", {}).get("hud_mask", []) or [])]
+
+    @property
+    def spatial_jitter(self) -> float:
+        """Train-time random zoom/reposition strength (0 disables)."""
+        return float(self.raw.get("clip", {}).get("spatial_jitter", 0.0))
+
+    @property
     def clip_duration_sec(self) -> float:
         """Wall-clock duration spanned by one clip."""
         return self.num_frames / self.sample_fps

@@ -91,8 +91,10 @@ def train(config_path: str, clips_root: str, models_root: str, device_str: str) 
     model, spec, head_params = build_model(backbone, cfg.num_classes)
     model.to(device)
 
-    train_tf = ClipTransform(cfg.crop_size, spec.mean, spec.std, train=True)
-    val_tf = ClipTransform(cfg.crop_size, spec.mean, spec.std, train=False)
+    train_tf = ClipTransform(cfg.crop_size, spec.mean, spec.std, train=True,
+                             frame_mode=cfg.frame_mode, spatial_jitter=cfg.spatial_jitter)
+    val_tf = ClipTransform(cfg.crop_size, spec.mean, spec.std, train=False,
+                           frame_mode=cfg.frame_mode)
     train_ds = VideoClipDataset(manifest_path, "train", train_tf)
     try:
         val_ds = VideoClipDataset(manifest_path, "val", val_tf)
@@ -167,6 +169,8 @@ def train(config_path: str, clips_root: str, models_root: str, device_str: str) 
                 "crop_size": cfg.crop_size,
                 "num_frames": cfg.num_frames,
                 "sample_fps": cfg.sample_fps,
+                "frame_mode": cfg.frame_mode,
+                "hud_mask": cfg.hud_mask,
                 "champion": cfg.champion,
                 "epoch": epoch,
                 "ability_macro_f1": best_score,

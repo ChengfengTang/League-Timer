@@ -76,6 +76,27 @@ Writes clips under `data/clips/<champion>/` and a `manifest.json` describing the
 split. Clips are stored as `.npy` frame stacks so training doesn't re-decode
 video.
 
+### Frame preprocessing (`clip.frame_mode` / `clip.hud_mask`)
+
+How each frame is fit to the square model input is config-driven and applied
+identically by the builder, recognizer, and live capture (so train == serve):
+
+- `frame_mode: letterbox` (default) keeps the **whole frame** (aspect-preserving
+  resize + pad). Use this to detect casts **anywhere on screen** (e.g. an enemy
+  champion near the edges). `center_crop` is the legacy mode that resizes the
+  short side then center-crops, dropping the left/right edges — only safe when
+  the thing you track is always centered (your own champion).
+- `hud_mask` blacks out rectangles (given as `[x, y, w, h]` fractions) before the
+  frame is used. This hides your own HUD (ability bar / minimap) so the model
+  can't cheat off your cooldown sweep or mana flash — cues that don't exist for
+  an enemy caster. Tune the defaults to your resolution/layout; set `[]` to
+  disable.
+- `spatial_jitter` (train-time only) randomly zooms/repositions clips so casts
+  are learned at many on-screen locations and scales.
+
+Changing any of these means you must **rebuild** (`src.dataset.build`) before
+retraining, since stored clips are baked at build time.
+
 ## 4. Train
 
 Train locally or on a cloud GPU (CUDA recommended):
@@ -112,6 +133,39 @@ python -m src.infer.evaluate --config configs/ezreal.yaml \
 Prints event-level precision / recall / F1 per ability. Use the misses to decide
 what extra footage to record.
 
+## Live (real-time screen capture)
+
+Watch your screen *as you play* and print `CAST W/E/R/Flash` the moment an
+ability fires (same model + thresholds as the offline recognizer):
+
+```bash
+python -m src.infer.live --config configs/ezreal.yaml \
+    --checkpoint models/ezreal/best.pt
+```
+
+A background thread grabs frames into a rolling one-clip buffer at the model's
+`sample_fps`; the main loop classifies the latest clip every `infer.stride_sec`
+and a streaming detector applies the same threshold / `min_margin` / `peak_only`
+/ `nms_window_sec` logic before emitting an event.
+
+Useful flags:
+
+- `--monitor 1` capture a specific display (`1` = primary, `0` = all combined).
+- `--region x,y,w,h` capture an explicit rectangle instead of a whole monitor.
+- `--stride-sec 0.2` override how often inference runs (lower = snappier, heavier).
+- `--device mps|cpu|cuda` force a device (`auto` by default).
+- `--verbose` show a live top-1 readout + capture fps.
+- `--preview` open a window showing your screen with the `clip.hud_mask` boxes drawn
+  next to the exact masked/letterboxed frame the model sees. Use it to align the
+  mask to your HUD before recording/training (it reflects the config, not the
+  checkpoint). Press `q` in the window to stop.
+- `--countdown 5` seconds to alt-tab into the game before it starts.
+
+> **macOS:** the first run triggers a Screen Recording permission prompt
+> (System Settings -> Privacy & Security -> Screen Recording). Grant it to your
+> terminal / IDE, then restart the command. Capture the same resolution/zoom you
+> trained on for best results; keep the game on the captured monitor.
+
 ## Adding a new champion
 
 Copy `configs/ezreal.yaml` to `configs/<champion>.yaml`, adjust `champion` and
@@ -130,7 +184,7 @@ src/
   annotate/     timestamp annotation tool
   dataset/      clip extraction, train/val split, PyTorch clip dataset
   train/        model + training loop
-  infer/        sliding-window recognizer + evaluation
+  infer/        sliding-window recognizer + evaluation + live screen capture
 models/         trained checkpoints (git-ignored; see below)
 outputs/        predicted events + overlay videos (git-ignored)
 AGENTS.md       detection tuning notes (recall > precision)
@@ -143,6 +197,6 @@ change every retrain and are easy to regenerate with `src.train.train`. Only
 
 ## Roadmap (post-MVP)
 
-- Live recognition from screen capture (point the recognizer at a capture source).
+- ~~Live recognition from screen capture~~ — done, see `src.infer.live`.
 - Multiple champions on screen (add localization/cropping before classification).
 - Per-champion cropping driven by the minimap / HUD to reduce background noise.

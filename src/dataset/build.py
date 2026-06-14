@@ -115,13 +115,17 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
         desc = f"{video_path.name}: {len(events)} pos, {len(neg_times)} neg"
         for k, (label, center) in enumerate(tqdm(centers, desc=desc, leave=False)):
             try:
+                # Sample full-resolution frames, then apply the same HUD mask +
+                # spatial fit the recognizer/live capture use, so train == serve.
                 clip = video_utils.sample_clip(
                     video_path,
                     center_sec=center,
                     num_frames=cfg.num_frames,
                     sample_fps=cfg.sample_fps,
-                    resize_short=cfg.crop_size,
+                    resize_short=None,
                 )
+                clip = video_utils.preprocess_clip(
+                    clip, cfg.crop_size, hud_mask=cfg.hud_mask, frame_mode=cfg.frame_mode)
             except Exception as exc:  # noqa: BLE001 - keep going on a bad clip
                 print(f"  ! failed clip @ {center:.2f}s in {video_path.name}: {exc}")
                 continue
@@ -158,6 +162,8 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
             "num_frames": cfg.num_frames,
             "sample_fps": cfg.sample_fps,
             "crop_size": cfg.crop_size,
+            "frame_mode": cfg.frame_mode,
+            "hud_mask": cfg.hud_mask,
         },
         "items": items,
     }

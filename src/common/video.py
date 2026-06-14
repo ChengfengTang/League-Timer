@@ -93,6 +93,72 @@ def resize_short_side(frame: np.ndarray, target: int) -> np.ndarray:
     return cv2.resize(frame, (new_w, new_h), interpolation=interp)
 
 
+def apply_hud_mask(frame: np.ndarray, rects: List[List[float]] | None) -> np.ndarray:
+    """Black out rectangles given as ``[x, y, w, h]`` fractions of the frame.
+
+    Used to hide the player's own HUD (ability bar, minimap) so the model can't
+    learn cues that only exist for *your* casts. Returns a copy when masking.
+    """
+    if not rects:
+        return frame
+    h, w = frame.shape[:2]
+    out = frame.copy()
+    for r in rects:
+        fx, fy, fw, fh = (float(v) for v in r)
+        x0 = max(0, int(round(fx * w)))
+        y0 = max(0, int(round(fy * h)))
+        x1 = min(w, int(round((fx + fw) * w)))
+        y1 = min(h, int(round((fy + fh) * h)))
+        if x1 > x0 and y1 > y0:
+            out[y0:y1, x0:x1] = 0
+    return out
+
+
+def letterbox_square(frame: np.ndarray, size: int) -> np.ndarray:
+    """Aspect-preserving resize of the whole frame into a ``size`` x ``size`` square.
+
+    The frame is scaled so its long side equals ``size`` and the remainder is
+    zero-padded (letterboxed). Unlike a center crop, this keeps the entire frame
+    (including the left/right edges) so off-center content stays visible.
+    """
+    h, w = frame.shape[:2]
+    scale = size / float(max(h, w))
+    new_h = max(1, int(round(h * scale)))
+    new_w = max(1, int(round(w * scale)))
+    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+    resized = cv2.resize(frame, (new_w, new_h), interpolation=interp)
+    out = np.zeros((size, size, frame.shape[2]), dtype=frame.dtype)
+    top = (size - new_h) // 2
+    left = (size - new_w) // 2
+    out[top:top + new_h, left:left + new_w] = resized
+    return out
+
+
+def preprocess_frame(frame: np.ndarray, size: int,
+                     hud_mask: List[List[float]] | None = None,
+                     frame_mode: str = "letterbox") -> np.ndarray:
+    """Apply HUD masking + spatial fit, identically across build/recognize/live.
+
+    ``letterbox`` returns a ``size`` x ``size`` frame containing the whole image.
+    ``center_crop`` (legacy) just resizes the short side to ``size`` and leaves the
+    crop to :class:`ClipTransform`.
+    """
+    frame = apply_hud_mask(frame, hud_mask)
+    if frame_mode == "letterbox":
+        return letterbox_square(frame, size)
+    if frame_mode == "center_crop":
+        return resize_short_side(frame, size)
+    raise ValueError(f"Unknown frame_mode '{frame_mode}' (use 'letterbox' or 'center_crop')")
+
+
+def preprocess_clip(clip: np.ndarray, size: int,
+                    hud_mask: List[List[float]] | None = None,
+                    frame_mode: str = "letterbox") -> np.ndarray:
+    """Apply :func:`preprocess_frame` to every frame of a (T, H, W, 3) clip."""
+    return np.stack(
+        [preprocess_frame(f, size, hud_mask, frame_mode) for f in clip], axis=0)
+
+
 def _read_frame_at(cap: "cv2.VideoCapture", frame_idx: int) -> np.ndarray | None:
     cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame_idx))
     ok, frame = cap.read()

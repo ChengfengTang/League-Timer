@@ -6,6 +6,9 @@ tqdm>=4.66
 # Video / image IO
 opencv-python>=4.8
 
+# Live screen capture (real-time recognizer: src.infer.live)
+mss>=9.0
+
 # Deep learning (install the torch build matching your platform)
 #   Mac (Apple Silicon, MPS):  pip install torch torchvision
 #   CUDA cloud GPU:            pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
