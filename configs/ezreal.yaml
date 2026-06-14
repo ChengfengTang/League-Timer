@@ -35,6 +35,39 @@ clip:
   # on-screen locations/scales (counteracts the centered-champion bias). 0 = off.
   spatial_jitter: 0.15
 
+# Localization (find the tracked champion on screen before classifying).
+# The recognizer crops a region around the champion instead of the whole frame,
+# so it ignores other champions' VFX and enlarges small abilities.
+localize:
+  enabled: true
+  # Champion crop region derived from the healthbar (source pixels at 1080p).
+  box_size: 220          # square side of the crop placed below the healthbar
+  offset_y: 5            # gap (px) from the bar bottom to the crop top
+  # Healthbar HSV fallback only (name_first is primary). Red = enemies; green =
+  # allies/teammates. Identity is always the champion name, not bar colour.
+  red_hsv: [[0, 120, 90], [10, 255, 255], [170, 120, 90], [180, 255, 255]]
+  green_hsv: [[35, 100, 90], [85, 255, 255]]
+  detect_green: true
+  bar_min_w: 55          # champion bars are wide; filters out minion bars
+  bar_max_w: 220
+  bar_min_h: 4
+  bar_max_h: 22
+  bar_min_aspect: 5.0    # width/height; bars are long and thin
+  # Fractional [x, y, w, h] UI zones to ignore (not in-world champions):
+  ignore_regions:
+    - [0.0, 0.0, 0.17, 0.17]   # top-left stats/scoreboard panel
+    - [0.60, 0.0, 0.40, 0.03]  # top-right status bar (score / timer)
+    - [0.0, 0.0, 0.045, 1.0]   # left item/shop rail
+    - [0.25, 0.85, 0.50, 0.15] # bottom command bar
+    - [0.78, 0.64, 0.22, 0.36] # minimap (bottom-right)
+  # Find "Ezreal" by nameplate text (same template for train / test / live).
+  name_first: true
+  assume_single_enemy: false
+  default_champion: Ezreal
+  name_templates:
+    Ezreal: configs/templates/ezreal_name.png
+  name_match_threshold: 0.6
+
 # Dataset builder
 dataset:
   # Positives: window centered on each labelled cast event.

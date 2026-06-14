@@ -171,6 +171,8 @@ def train(config_path: str, clips_root: str, models_root: str, device_str: str) 
                 "sample_fps": cfg.sample_fps,
                 "frame_mode": cfg.frame_mode,
                 "hud_mask": cfg.hud_mask,
+                "localize_enabled": cfg.localize_enabled,
+                "localize": cfg.section("localize") if cfg.localize_enabled else None,
                 "champion": cfg.champion,
                 "epoch": epoch,
                 "ability_macro_f1": best_score,

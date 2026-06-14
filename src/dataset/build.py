@@ -27,6 +27,7 @@ from tqdm import tqdm
 from src.common.annotations import Annotation
 from src.common.config import Config
 from src.common import video as video_utils
+from src.localize import Localizer
 
 
 def _find_video(video_name: str, raw_dir: Path) -> Optional[Path]:
@@ -74,6 +75,9 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
     out_dir = Path(clips_root) / cfg.champion
     frames_dir = out_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
+    # Drop clips from a prior build so a rebuild doesn't leave stale .npy on disk.
+    for old in frames_dir.glob("*.npy"):
+        old.unlink()
 
     ann_files = sorted(annotations_dir.glob("*.json"))
     if not ann_files:
@@ -85,8 +89,16 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
     neg_per_video = int(ds.get("negatives_per_video", 40))
     neg_min_gap = float(ds.get("negative_min_gap_sec", 1.0))
 
+    # Localize-then-classify: crop a tight box around the tracked champion so the
+    # classifier never sees the whole frame (no teamfight noise; small VFX get
+    # enlarged). Both positives and negatives are cropped around the champion, so
+    # negatives teach "champion present but not casting".
+    localize = cfg.localize_enabled
+    localizer = Localizer.from_config(cfg.section("localize"), base_dir=".") if localize else None
+
     items: List[Dict] = []
     skipped = 0
+    loc_miss = 0
 
     for ann_file in ann_files:
         ann = Annotation.load(ann_file)
@@ -115,8 +127,7 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
         desc = f"{video_path.name}: {len(events)} pos, {len(neg_times)} neg"
         for k, (label, center) in enumerate(tqdm(centers, desc=desc, leave=False)):
             try:
-                # Sample full-resolution frames, then apply the same HUD mask +
-                # spatial fit the recognizer/live capture use, so train == serve.
+                # Sample full-resolution frames first.
                 clip = video_utils.sample_clip(
                     video_path,
                     center_sec=center,
@@ -124,8 +135,18 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
                     sample_fps=cfg.sample_fps,
                     resize_short=None,
                 )
-                clip = video_utils.preprocess_clip(
-                    clip, cfg.crop_size, hud_mask=cfg.hud_mask, frame_mode=cfg.frame_mode)
+                if localize:
+                    # Find the champion (centre frame + neighbour fallback) and
+                    # crop the whole window to that box; drop clips we can't place.
+                    det = localizer.locate_clip(clip)
+                    if det is None:
+                        loc_miss += 1
+                        continue
+                    clip = video_utils.crop_clip_to_box(clip, det.box, cfg.crop_size)
+                else:
+                    # Legacy full-frame path: HUD mask + spatial fit (train==serve).
+                    clip = video_utils.preprocess_clip(
+                        clip, cfg.crop_size, hud_mask=cfg.hud_mask, frame_mode=cfg.frame_mode)
             except Exception as exc:  # noqa: BLE001 - keep going on a bad clip
                 print(f"  ! failed clip @ {center:.2f}s in {video_path.name}: {exc}")
                 continue
@@ -164,7 +185,9 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
             "crop_size": cfg.crop_size,
             "frame_mode": cfg.frame_mode,
             "hud_mask": cfg.hud_mask,
+            "localize": localize,
         },
+        "localize": cfg.section("localize") if localize else None,
         "items": items,
     }
     manifest_path = out_dir / "manifest.json"
@@ -180,6 +203,8 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
         print(f"  {label:<12} train={tr:<5} val={va:<5} total={tr + va}")
     if skipped:
         print(f"  ({skipped} events skipped: ability not in config classes)")
+    if localize and loc_miss:
+        print(f"  ({loc_miss} clips dropped: champion not localized in window)")
     print(f"\nManifest -> {manifest_path}")
     print(f"Clips    -> {frames_dir}")
 

@@ -159,6 +159,29 @@ def preprocess_clip(clip: np.ndarray, size: int,
         [preprocess_frame(f, size, hud_mask, frame_mode) for f in clip], axis=0)
 
 
+def crop_box(frame: np.ndarray, box: "tuple[int, int, int, int]") -> np.ndarray:
+    """Crop ``frame`` to ``box`` = (x, y, w, h), clamped to the frame bounds."""
+    h, w = frame.shape[:2]
+    x, y, bw, bh = box
+    x0 = max(0, min(int(x), w - 1))
+    y0 = max(0, min(int(y), h - 1))
+    x1 = max(x0 + 1, min(int(x + bw), w))
+    y1 = max(y0 + 1, min(int(y + bh), h))
+    return frame[y0:y1, x0:x1]
+
+
+def crop_clip_to_box(clip: np.ndarray, box: "tuple[int, int, int, int]",
+                     size: int) -> np.ndarray:
+    """Crop every frame of a (T, H, W, 3) clip to ``box`` and letterbox to ``size``.
+
+    Used by the localize-then-classify pipeline: one champion box (found at the
+    window's centre) is applied to all frames so the crop window stays fixed
+    while the ability VFX plays out inside it (train == serve).
+    """
+    return np.stack(
+        [letterbox_square(crop_box(f, box), size) for f in clip], axis=0)
+
+
 def _read_frame_at(cap: "cv2.VideoCapture", frame_idx: int) -> np.ndarray | None:
     cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, frame_idx))
     ok, frame = cap.read()

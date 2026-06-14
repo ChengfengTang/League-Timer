@@ -97,6 +97,40 @@ identically by the builder, recognizer, and live capture (so train == serve):
 Changing any of these means you must **rebuild** (`src.dataset.build`) before
 retraining, since stored clips are baked at build time.
 
+### Localization (`localize:`) — find the champion before classifying
+
+Full-frame classification breaks down in real games: the champion you track is
+small, off-centre, and surrounded by *other* champions' abilities (any stray
+Flash becomes noise). When `localize.enabled: true`, the builder/recognizer
+first **finds the tracked champion** and classifies a tight crop around it
+instead of the whole frame. This removes teamfight noise and enlarges small VFX.
+
+How it finds the champion (`src/localize/`):
+
+- **Name + healthbar** — identity is the champion name above the bar (e.g.
+  "Ezreal"), not bar colour. Allies use a **green** bar; enemies use **red**;
+  either works the same. Template-match the name, estimate the bar just below
+  it, and crop a `box_size` square under the bar. Add more champions by adding
+  more `name_templates`.
+- **Bar-colour fallback** — if name matching fails, optional red/green HSV bar
+  detection finds champion-shaped bars and confirms them by name. Minion bars
+  are filtered by shape (wide, thin).
+- **`ignore_regions`** — fractional `[x, y, w, h]` UI zones to skip (HUD,
+  scoreboard, minimap). Tune to your layout.
+
+The template must come from **your client language** (e.g. English "Ezreal").
+The interface returns a list of `(champion, box)` for multi-champion tracking
+(enemies or teammates).
+
+Preview the localizer on any video (red outline = estimated bar, green = crop):
+
+```bash
+python -m src.localize.preview --config configs/ezreal.yaml \
+    --video data/raw_videos/test.mp4 --out outputs/loc_test.mp4
+```
+
+Like the preprocessing keys, changing `localize:` means you must **rebuild**.
+
 ## 4. Train
 
 Train locally or on a cloud GPU (CUDA recommended):
@@ -183,6 +217,7 @@ src/
   common/       config, video sampling, annotation schema, torch helpers
   annotate/     timestamp annotation tool
   dataset/      clip extraction, train/val split, PyTorch clip dataset
+  localize/     champion localization (healthbar + name templates) + preview
   train/        model + training loop
   infer/        sliding-window recognizer + evaluation + live screen capture
 models/         trained checkpoints (git-ignored; see below)
@@ -198,5 +233,9 @@ change every retrain and are easy to regenerate with `src.train.train`. Only
 ## Roadmap (post-MVP)
 
 - ~~Live recognition from screen capture~~ — done, see `src.infer.live`.
-- Multiple champions on screen (add localization/cropping before classification).
-- Per-champion cropping driven by the minimap / HUD to reduce background noise.
+- ~~Per-champion cropping to reduce background noise~~ — done, see `localize:`
+  and `src/localize/` (healthbar localization + champion-centred crops).
+- Multiple champions on screen: localizer interface is multi-champion ready;
+  wire `name_templates` + flip `assume_single_enemy: false` and integrate the
+  crop step into `recognize.py` / `live.py`.
+- Flash disambiguation via the localized box displacement (spatial cue).

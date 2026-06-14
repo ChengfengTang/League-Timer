@@ -93,5 +93,9 @@ class Config:
         """Wall-clock duration spanned by one clip."""
         return self.num_frames / self.sample_fps
 
+    @property
+    def localize_enabled(self) -> bool:
+        return bool(self.raw.get("localize", {}).get("enabled", False))
+
     def section(self, name: str) -> Dict[str, Any]:
         return dict(self.raw.get(name, {}))
