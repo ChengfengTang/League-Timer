@@ -76,18 +76,16 @@ Writes clips under `data/clips/<champion>/` and a `manifest.json` describing the
 split. Clips are stored as `.npy` frame stacks so training doesn't re-decode
 video.
 
-## 4. Train (cloud GPU)
+## 4. Train
 
-Train locally or, preferably, on a cloud GPU:
+Train locally or on a cloud GPU (CUDA recommended):
 
 ```bash
 python -m src.train.train --config configs/ezreal.yaml
 ```
 
-Or open `notebooks/train_cloud.ipynb` in Colab / runpod, which clones the repo,
-installs deps, runs the same training, and saves the checkpoint. Checkpoints land
-in `models/<champion>/best.pt`. Training prints per-class precision/recall and a
-confusion matrix on the validation split.
+Checkpoints land in `models/<champion>/best.pt`. Training prints per-class
+precision/recall and a confusion matrix on the validation split.
 
 ## 5. Recognize (sliding window over a video)
 
@@ -126,16 +124,22 @@ configs/        per-champion YAML configs
 data/
   raw_videos/   recorded gameplay (git-ignored)
   annotations/  timestamp label JSON (git-ignored)
-  clips/        extracted training clips (git-ignored)
+  clips/        extracted training clips + manifest (git-ignored)
 src/
-  common/       config, video sampling, annotation schema
+  common/       config, video sampling, annotation schema, torch helpers
   annotate/     timestamp annotation tool
-  dataset/      clip extraction + train/val split
+  dataset/      clip extraction, train/val split, PyTorch clip dataset
   train/        model + training loop
   infer/        sliding-window recognizer + evaluation
-notebooks/      cloud training notebook
-models/         checkpoints (git-ignored)
+models/         trained checkpoints (git-ignored; see below)
+outputs/        predicted events + overlay videos (git-ignored)
+AGENTS.md       detection tuning notes (recall > precision)
 ```
+
+`models/` is git-ignored for the same reason as `data/clips/`: checkpoints are
+large binary artifacts (~10 MB each) produced by training, not source. They
+change every retrain and are easy to regenerate with `src.train.train`. Only
+`models/.gitkeep` is tracked so the directory exists after clone.
 
 ## Roadmap (post-MVP)
 

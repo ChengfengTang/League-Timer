@@ -1,6 +1,6 @@
 """Fine-tune the clip classifier and report per-class metrics.
 
-Run locally or in the cloud notebook::
+Run locally or on a cloud GPU::
 
     python -m src.train.train --config configs/ezreal.yaml
 

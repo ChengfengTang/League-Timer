@@ -59,7 +59,8 @@ def sliding_window_scores(
     transform = ClipTransform(crop_size, ckpt["mean"], ckpt["std"], train=False)
 
     lo = clip_dur / 2.0
-    hi = max(meta.duration_sec - clip_dur / 2.0, lo)
+    end_sec = vu.effective_duration_sec(video_path)
+    hi = max(end_sec - clip_dur / 2.0, lo)
     centers = list(np.arange(lo, hi + 1e-6, stride_sec)) or [meta.duration_sec / 2.0]
 
     times: List[float] = []
@@ -99,15 +100,43 @@ def detect_events(
     thresholds: Dict[str, float],
     default_threshold: float,
     nms_window_sec: float,
+    peak_only: bool = False,
+    min_margin: float = 0.0,
+    track: List[str] | None = None,
 ) -> List[Dict]:
-    """Threshold + greedy temporal NMS, per ability class."""
+    """Threshold + optional peak/margin filters + greedy temporal NMS, per ability.
+
+    ``track`` optionally restricts which abilities are *emitted* (e.g. only the
+    high-cooldown ones worth timing). Non-tracked abilities still participate in
+    the ``min_margin`` comparison so they can suppress confused detections.
+    """
+    ability_idx = [i for i, c in enumerate(classes) if c != "background"]
+    peak_radius = max(nms_window_sec / 2.0, 0.05)
     events: List[Dict] = []
+
     for ci, name in enumerate(classes):
         if name == "background":
             continue
+        if track and name not in track:
+            continue
         thr = float(thresholds.get(name, default_threshold))
         scores = probs[:, ci]
-        cand = [i for i in range(len(times)) if scores[i] >= thr]
+
+        cand: List[int] = []
+        for i in range(len(times)):
+            if scores[i] < thr:
+                continue
+            if min_margin > 0:
+                other_scores = [probs[i, j] for j in ability_idx if j != ci]
+                if other_scores and (scores[i] - max(other_scores)) < min_margin:
+                    continue
+            if peak_only:
+                t = float(times[i])
+                local = np.abs(times - t) <= peak_radius
+                if scores[i] < float(scores[local].max()) - 1e-9:
+                    continue
+            cand.append(i)
+
         cand.sort(key=lambda i: scores[i], reverse=True)
         taken_times: List[float] = []
         for i in cand:
@@ -116,6 +145,7 @@ def detect_events(
                 taken_times.append(t)
                 events.append({"ability": name, "time": round(t, 3),
                                "score": round(float(scores[i]), 4)})
+
     events.sort(key=lambda e: e["time"])
     return events
 
@@ -147,6 +177,10 @@ def render_overlay(
         if not ok:
             break
         t = f / fps
+        margin_x = 10
+        margin_bottom = 20
+        line_h = 34
+
         # live top-1 ability readout from nearest scored window
         if len(times):
             j = _nearest_idx(times, t)
@@ -154,18 +188,22 @@ def render_overlay(
             readout = f"{classes[best_i]} {probs[j, best_i]:.2f}"
         else:
             readout = "-"
-        cv2.putText(frame, readout, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+        readout_y = h - margin_bottom
+        cv2.putText(frame, readout, (margin_x, readout_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.putText(frame, readout, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+        cv2.putText(frame, readout, (margin_x, readout_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
                     (0, 255, 255), 2, cv2.LINE_AA)
-        # flash detected events
+        # flash detected events (stack upward from bottom, above readout)
         active = [e for e in events if 0 <= (t - e["time"]) <= flash_sec]
+        cast_base_y = readout_y - 36
         for k, e in enumerate(active):
             label = f"CAST {e['ability']} ({e['score']:.2f})"
-            y = 70 + 34 * k
-            cv2.putText(frame, label, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+            y = cast_base_y - line_h * k
+            if y < 40:
+                break
+            cv2.putText(frame, label, (margin_x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
                         (0, 0, 0), 5, cv2.LINE_AA)
-            cv2.putText(frame, label, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+            cv2.putText(frame, label, (margin_x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
                         (0, 80, 255), 2, cv2.LINE_AA)
         writer.write(frame)
         f += 1
@@ -193,6 +231,9 @@ def run(config_path: str, video_path: str, checkpoint: str, out_dir: str,
         thresholds=icfg.get("thresholds", {}) or {},
         default_threshold=float(icfg.get("default_threshold", 0.6)),
         nms_window_sec=float(icfg.get("nms_window_sec", 1.0)),
+        peak_only=bool(icfg.get("peak_only", False)),
+        min_margin=float(icfg.get("min_margin", 0.0)),
+        track=icfg.get("track") or None,
     )
 
     stem = Path(video_path).stem

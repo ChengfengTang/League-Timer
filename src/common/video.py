@@ -7,6 +7,7 @@ sample clips identically.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import List
 
@@ -45,6 +46,36 @@ def probe(path: str | Path) -> VideoMeta:
     if fps <= 0:
         raise ValueError(f"Video reports invalid fps ({fps}): {path}")
     return VideoMeta(path=path, fps=fps, frame_count=frame_count, width=width, height=height)
+
+
+@lru_cache(maxsize=16)
+def last_readable_frame(path: str) -> int:
+    """Last frame index OpenCV can actually decode (often < reported frame count)."""
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise FileNotFoundError(f"Could not open video: {path}")
+    try:
+        reported = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if reported <= 0:
+            return 0
+        lo, hi = 0, reported
+        while lo < hi:
+            mid = (lo + hi) // 2
+            cap.set(cv2.CAP_PROP_POS_FRAMES, mid)
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                lo = mid + 1
+            else:
+                hi = mid
+        return max(0, lo - 1)
+    finally:
+        cap.release()
+
+
+def effective_duration_sec(path: str | Path) -> float:
+    """Readable duration in seconds (may be shorter than probe().duration_sec)."""
+    meta = probe(path)
+    return last_readable_frame(str(Path(path))) / meta.fps
 
 
 def resize_short_side(frame: np.ndarray, target: int) -> np.ndarray:
@@ -89,6 +120,7 @@ def sample_clip(
     Returns array of shape (num_frames, H, W, 3), dtype uint8.
     """
     meta = probe(path)
+    max_frame = last_readable_frame(str(path))
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
         raise FileNotFoundError(f"Could not open video: {path}")
@@ -100,7 +132,7 @@ def sample_clip(
         for i in range(num_frames):
             t = start_sec + (i + 0.5) / sample_fps
             frame_idx = int(round(t * meta.fps))
-            frame_idx = min(max(frame_idx, 0), max(meta.frame_count - 1, 0))
+            frame_idx = min(max(frame_idx, 0), max_frame)
             frame = _read_frame_at(cap, frame_idx)
             if frame is None:
                 frame = last_good

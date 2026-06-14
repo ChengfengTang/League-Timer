@@ -8,6 +8,7 @@ classes:
   - W
   - E
   - R
+  - Flash
 
 # Clip sampling (used by the dataset builder and the recognizer)
 clip:
@@ -38,12 +39,24 @@ train:
 
 # Recognizer (sliding-window inference over a video file)
 infer:
-  stride_sec: 0.1              # finer scan — catches brief Q in combos (slower)
+  stride_sec: 0.1              # finer scan (slower)
+  # Only emit timers for high-cooldown abilities worth tracking. Spammed, short-CD
+  # abilities (Q) stay in the model — so they can suppress confused detections via
+  # min_margin — but are not reported. Per champion: e.g. Ahri would use [E, R].
+  track:
+    - W
+    - E
+    - R
+    - Flash
   # Per-class confidence thresholds. Missing classes fall back to default.
-  default_threshold: 0.6
+  # Bias toward recall (see AGENTS.md): missing a cast is worse than a false alarm.
+  default_threshold: 0.65
   thresholds:
-    Q: 0.45                    # Q VFX is subtle; lower bar helps in WQ combos
-    W: 0.6
-    E: 0.75                    # reduce flash false positives
-    R: 0.6
-  nms_window_sec: 0.4          # allow W+Q detections closer together
+    Q: 0.55                    # kept in model for min_margin competition, not tracked
+    W: 0.65                    # bias toward recall, we must not miss it
+    E: 0.7
+    R: 0.6                     # ult — most important to catch
+    Flash: 0.65                # summoner blink — separate from E (Arcane Shift)
+  nms_window_sec: 0.6
+  peak_only: true               # only emit at local score peaks (cuts FPs)
+  min_margin: 0.12              # class must beat next-best ability by this much

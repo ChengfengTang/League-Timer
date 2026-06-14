@@ -1,9 +1,6 @@
 # Data & model artifacts (large, not source)
-data/raw_videos/*
-data/annotations/*
-data/clips/*
+data/*
 models/*
-clips_*.zip
 *.zip
 !**/.gitkeep
 
