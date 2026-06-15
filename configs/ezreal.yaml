@@ -91,9 +91,8 @@ train:
 # Recognizer (sliding-window inference over a video file)
 infer:
   stride_sec: 0.1              # finer scan (slower)
-  # Only emit timers for high-cooldown abilities worth tracking. Spammed, short-CD
-  # abilities (Q) stay in the model — so they can suppress confused detections via
-  # min_margin — but are not reported. Per champion: e.g. Ahri would use [E, R].
+  # Q stays in the model for min_margin competition but is not emitted — tracking it
+  # causes false Q@1.00 to block W/E/R/Flash from passing min_margin in live.
   track:
     - W
     - E
@@ -101,13 +100,44 @@ infer:
     - Flash
   # Per-class confidence thresholds. Missing classes fall back to default.
   # Bias toward recall (see AGENTS.md): missing a cast is worse than a false alarm.
-  default_threshold: 0.65
+  default_threshold: 0.98
   thresholds:
-    Q: 0.55                    # kept in model for min_margin competition, not tracked
-    W: 0.65                    # bias toward recall, we must not miss it
-    E: 0.7
-    R: 0.6                     # ult — most important to catch
-    Flash: 0.65                # summoner blink — separate from E (Arcane Shift)
+    Q: 0.98
+    W: 0.98
+    E: 0.98
+    R: 0.98
+    Flash: 0.98
   nms_window_sec: 0.6
   peak_only: true               # only emit at local score peaks (cuts FPs)
   min_margin: 0.12              # class must beat next-best ability by this much
+
+  # Live screen capture — tuned separately from offline recognize.
+  # Offline scans every 0.1s so peak_only works; live inference is ~1–2s/tick,
+  # so we lower thresholds, disable peak_only, and cache localization.
+  live:
+    stride_sec: 0.2
+    default_threshold: 0.85
+    thresholds:
+      W: 0.85
+      E: 0.85
+      R: 0.80
+      Flash: 0.85
+    peak_only: false            # peaks are missed when windows are sparse
+    min_margin: 0.08
+    nms_window_sec: 0.6
+    localize_cache_sec: 1.0     # reuse last champion box (player stays put)
+
+# Cooldown timers for the web app (src.app.server). Base CDs from Data Dragon —
+# refresh after patches: python scripts/sync_timer_cds.py ezreal
+# (patch 16.12.1)
+timers:
+  abilities:
+    W: 8                         # Essence Flux
+    E: [26, 23, 20, 17, 14]       # Arcane Shift
+    R: [120, 105, 90]             # Trueshot Barrage
+  # Auto-tracked summoners this champion's model can detect (the model emits Flash).
+  summoners:
+    - Flash
+  # Optional: map a detected model class to a timer key (identity if omitted).
+  # e.g. if a champion's ult VFX class were named differently than its key.
+  class_to_key: {}

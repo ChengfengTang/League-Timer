@@ -44,7 +44,64 @@ from src.common import video as vu
 from src.common.config import Config
 from src.common.torch_utils import pick_device
 from src.dataset.clip_dataset import ClipTransform
-from src.infer.recognize import load_model
+from src.infer.recognize import _localizer_from_ckpt, load_model, prepare_model_clip
+from src.localize.localizer import Detection
+
+
+def _live_cfg(icfg: Dict) -> Dict:
+    """Merge ``infer.live`` overrides on top of shared ``infer`` settings."""
+    base = dict(icfg)
+    overrides = icfg.get("live") or {}
+    for key, val in overrides.items():
+        if key == "thresholds":
+            merged = dict(base.get("thresholds") or {})
+            merged.update(val or {})
+            base["thresholds"] = merged
+        else:
+            base[key] = val
+    return base
+
+
+def _prepare_live_clip(
+    clip: np.ndarray,
+    ckpt: Dict,
+    localizer,
+    cache: Dict,
+) -> Tuple[Optional[np.ndarray], float]:
+    """Localize + crop for live, with a short-lived box cache for speed.
+
+    Returns (model_clip, localize_ms). On cache refresh we only search the
+    centre frame — ``locate_clip`` over 13 full-res frames is what causes
+    occasional 1–2s inference spikes (e.g. right after a big R VFX).
+    """
+    crop_size = int(ckpt["crop_size"])
+    if localizer is None:
+        t0 = time.monotonic()
+        out = prepare_model_clip(clip, ckpt, None)
+        return out, (time.monotonic() - t0) * 1000.0
+
+    t0 = time.monotonic()
+    now = time.monotonic()
+    cache_sec = float(cache.get("sec", 0.0))
+    det: Detection | None = None
+    cached = cache.get("det")
+    cached_t = float(cache.get("t", 0.0))
+    if cached is not None and cache_sec > 0 and (now - cached_t) < cache_sec:
+        det = cached
+    else:
+        # Fast refresh: one frame only. Full locate_clip scans up to 13×1080p.
+        center = clip[len(clip) // 2]
+        dets = localizer.locate(center)
+        if dets:
+            det = max(dets, key=lambda d: (d.score, d.box[2] * d.box[3]))
+            cache["det"] = det
+            cache["t"] = now
+        elif cached is not None:
+            det = cached
+    loc_ms = (time.monotonic() - t0) * 1000.0
+    if det is None:
+        return None, loc_ms
+    return vu.crop_clip_to_box(clip, det.box, crop_size), loc_ms
 
 
 def _open_mss():
@@ -61,10 +118,8 @@ def _open_mss():
 class ScreenGrabber(threading.Thread):
     """Background thread that fills a rolling buffer of recent frames.
 
-    Frames are grabbed as fast as the target cadence allows, converted to RGB,
-    and short-side-resized to ``crop_size`` immediately (cheap, and keeps the
-    buffer small). The buffer holds the last ``num_frames`` frames spanning one
-    clip; the inference loop snapshots it under a lock.
+    Frames are grabbed at the target cadence and stored as full-resolution RGB
+    (localization + cropping happen at inference time, matching offline recognize).
     """
 
     def __init__(self, region: Dict[str, int], num_frames: int, sample_fps: float,
@@ -136,15 +191,12 @@ class ScreenGrabber(threading.Thread):
 
                 raw = np.asarray(sct.grab(self.region))  # BGRA, (H, W, 4)
                 full = cv2.cvtColor(raw, cv2.COLOR_BGRA2RGB)
-                # Same HUD mask + spatial fit as training, applied per frame so the
-                # rolling buffer stays small.
-                frame = vu.preprocess_frame(full, self.crop_size,
-                                            hud_mask=self.hud_mask, frame_mode=self.frame_mode)
                 ts = time.monotonic()
                 with self._lock:
-                    self._buf.append((ts, frame))
+                    self._buf.append((ts, full))
                 if self.preview:
-                    self._build_preview(full, frame)
+                    # Model-input preview is built in the main loop once localized.
+                    self._build_preview(full, full)
 
                 dt = ts - last_t
                 last_t = ts
@@ -284,47 +336,52 @@ def _show_preview(grabber: "ScreenGrabber", window: str) -> bool:
 def run(config_path: str, checkpoint: str, device_str: str, monitor: int,
         region: Optional[str], stride_sec: Optional[float], countdown: int,
         verbose: bool, preview: bool = False) -> None:
-    cfg = Config.load(config_path)
-    icfg = cfg.section("infer")
-    device = pick_device(device_str)
+    # Lazy import avoids a circular import (detector imports building blocks here).
+    from src.app.detector import LiveDetector
 
-    model, ckpt = load_model(checkpoint, device)
-    classes = ckpt["classes"]
-    num_frames = int(ckpt["num_frames"])
-    sample_fps = float(ckpt["sample_fps"])
-    crop_size = int(ckpt["crop_size"])
-    frame_mode = str(ckpt.get("frame_mode", "center_crop"))
-    hud_mask = ckpt.get("hud_mask") or []
-    # In preview mode you're tuning the config's mask/letterbox (likely before
-    # retraining), so reflect the CONFIG rather than the checkpoint.
-    if preview:
-        frame_mode = cfg.frame_mode
-        hud_mask = cfg.hud_mask
-    clip_dur = num_frames / sample_fps
-    transform = ClipTransform(crop_size, ckpt["mean"], ckpt["std"], train=False,
-                              frame_mode=frame_mode)
-
-    stride = float(stride_sec if stride_sec is not None else icfg.get("stride_sec", 0.25))
-    detector = StreamDetector(
-        classes,
-        thresholds=icfg.get("thresholds", {}) or {},
-        default_threshold=float(icfg.get("default_threshold", 0.6)),
-        nms_window_sec=float(icfg.get("nms_window_sec", 1.0)),
-        peak_only=bool(icfg.get("peak_only", False)),
-        min_margin=float(icfg.get("min_margin", 0.0)),
-        track=icfg.get("track") or None,
+    det = LiveDetector(
+        config_path, checkpoint, device_str=device_str, monitor=monitor,
+        region=region, stride_sec=stride_sec,
     )
 
-    rect = resolve_region(monitor, region)
-    print(f"Device: {device}")
-    print(f"Loaded {ckpt['backbone']} ({ckpt.get('champion', '?')}), classes={classes}")
-    print(f"Capture region: {rect['width']}x{rect['height']} @ "
-          f"({rect['left']},{rect['top']})  | clip={clip_dur:.2f}s "
-          f"({num_frames}f @ {sample_fps:g}fps), stride={stride:g}s")
-    src = "config (preview tuning)" if preview else "checkpoint"
-    print(f"Preprocess: frame_mode={frame_mode}, hud_mask={len(hud_mask)} rect(s) [from {src}]")
-    if detector.track:
-        print(f"Tracking: {', '.join(detector.track)}")
+    # Preview-tuning without a localizer reflects the CONFIG mask/letterbox so you
+    # can align clip.hud_mask before retraining (matches the old CLI behaviour).
+    if preview and det.localizer is None:
+        cfg = Config.load(config_path)
+        det.frame_mode = cfg.frame_mode
+        det.hud_mask = cfg.hud_mask
+        det.transform = ClipTransform(det.crop_size, det.ckpt["mean"], det.ckpt["std"],
+                                      train=False, frame_mode=det.frame_mode)
+
+    loc = "localize+crop" if det.localizer else "full-frame"
+    print(f"Device: {det.device}")
+    print(f"Loaded {det.ckpt['backbone']} ({det.ckpt.get('champion', '?')}), "
+          f"classes={det.classes}, preprocess={loc}")
+    print(f"Capture region: {det.region['width']}x{det.region['height']} @ "
+          f"({det.region['left']},{det.region['top']})  | clip={det.clip_dur:.2f}s "
+          f"({det.num_frames}f @ {det.sample_fps:g}fps), stride={det.stride:g}s")
+    print(f"Live detect: threshold>={det.detector.default_threshold:g}, "
+          f"peak_only={det.detector.peak_only}, min_margin={det.detector.min_margin:g}, "
+          f"loc_cache={det.loc_cache['sec']:g}s")
+    if det.detector.track:
+        print(f"Tracking: {', '.join(det.detector.track)}")
+
+    def on_event(ability: str, score: float, t: float) -> None:
+        print(f"[{t:7.1f}s]  CAST  {ability:<5} ({score:.2f})", flush=True)
+
+    def on_status(s: Dict) -> None:
+        if not verbose:
+            return
+        if s.get("localize_miss"):
+            print(f"   ! localize miss ({s['loc_ms']:.0f}ms)", end="\r", flush=True)
+            return
+        print(f"   ~ {s['top1']:<5} {s['top1_score']:.2f} | "
+              f"cap {s['capture_fps']:4.1f}fps | "
+              f"loc {s['loc_ms']:4.0f}ms model {s['model_ms']:4.0f}ms",
+              end="\r", flush=True)
+
+    det.on_event = on_event
+    det.on_status = on_status
 
     for n in range(countdown, 0, -1):
         print(f"  starting in {n}... (switch to your game)", end="\r", flush=True)
@@ -332,56 +389,18 @@ def run(config_path: str, checkpoint: str, device_str: str, monitor: int,
     print(" " * 50, end="\r")
     print("LIVE. Cast abilities in-game; detections print below. Ctrl+C to stop.\n")
 
-    grabber = ScreenGrabber(rect, num_frames, sample_fps, crop_size,
-                            hud_mask=hud_mask, frame_mode=frame_mode, preview=preview)
-    grabber.start()
-
     preview_window = "League-Timer: full+mask (left) | model input (right) — press q to quit"
     if preview:
         print("Preview window open: red boxes = HUD mask, right panel = what the "
               "model sees. Tune clip.hud_mask in the config if the boxes don't cover "
               "your HUD. Press q (in the window) or Ctrl+C to stop.")
 
-    next_infer = time.monotonic()
-    last_status = 0.0
+    preview_cb = (lambda g: _show_preview(g, preview_window)) if preview else None
     try:
-        while True:
-            now = time.monotonic()
-            if now < next_infer:
-                if preview and not _show_preview(grabber, preview_window):
-                    break
-                time.sleep(min(0.005, next_infer - now))
-                continue
-            next_infer += stride
-
-            if preview and not _show_preview(grabber, preview_window):
-                break
-
-            frames, center_t = grabber.snapshot()
-            if frames is None:
-                next_infer = time.monotonic() + stride  # still buffering
-                continue
-
-            clip = np.stack(frames, axis=0)  # (T, H, W, 3) uint8
-            x = transform(clip).unsqueeze(0).to(device)
-            with torch.no_grad():
-                logits = model(x)
-                probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
-
-            for e in detector.push(center_t, probs):
-                print(f"[{e['time']:7.1f}s]  CAST  {e['ability']:<5} ({e['score']:.2f})",
-                      flush=True)
-
-            if verbose and (now - last_status) >= 0.5:
-                last_status = now
-                best = max(detector.ability_idx, key=lambda i: probs[i])
-                print(f"   ~ {classes[best]:<5} {probs[best]:.2f} | "
-                      f"cap {grabber.capture_fps:4.1f}fps", end="\r", flush=True)
+        det.run_loop(preview_cb=preview_cb)
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
-        grabber.stop()
-        grabber.join(timeout=1.0)
         if preview:
             cv2.destroyAllWindows()
 

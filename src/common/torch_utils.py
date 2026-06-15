@@ -1,7 +1,12 @@
 """Small torch helpers shared by training and inference."""
 from __future__ import annotations
 
+import os
+
 import torch
+
+# X3D uses avg_pool3d, which MPS does not implement; fall back to CPU for those ops.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 
 def pick_device(prefer: str = "auto") -> torch.device:

@@ -1,0 +1,357 @@
+:root {
+  --bg: #0b0f19;
+  --panel: #131a2a;
+  --panel-2: #1b2438;
+  --border: #2a3550;
+  --text: #e6ebf5;
+  --muted: #8492b0;
+  --amber: #f5b300;
+  --amber-dim: #b9870b;
+  --green: #34d399;
+  --red: #f87171;
+  --indigo: #6366f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  min-height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem 1.4rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #0e1422, #0b0f19);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--amber);
+  letter-spacing: 0.5px;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.conn {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.conn--on {
+  color: var(--green);
+  border-color: #1f6f54;
+}
+
+.conn--off {
+  color: var(--red);
+  border-color: #7a2e2e;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.4rem;
+}
+
+.add-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.add-form input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.65rem 0.85rem;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.add-form input:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+}
+
+.btn-primary {
+  background: var(--amber);
+  color: #1a1300;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 1.2rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: #ffc524;
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 640px;
+}
+
+.empty code {
+  background: var(--panel-2);
+  padding: 0.05rem 0.35rem;
+  border-radius: 5px;
+  color: var(--amber);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.card__name {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.badge--auto {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+  border: 1px solid #1f6f54;
+}
+
+.badge--manual {
+  background: rgba(132, 146, 176, 0.12);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.badge--loading {
+  background: rgba(245, 179, 0, 0.12);
+  color: var(--amber);
+  border: 1px solid var(--amber-dim);
+}
+
+.badge--error {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--red);
+  border: 1px solid #7a2e2e;
+}
+
+.card__status {
+  font-size: 0.66rem;
+  color: var(--muted);
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.remove {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.remove:hover {
+  color: var(--red);
+  border-color: #7a2e2e;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.stat__label {
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.stat input {
+  width: 3rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat input:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+}
+
+.row-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin: 0.6rem 0 0.35rem;
+}
+
+.slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.slot-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 58px;
+  min-width: 58px;
+}
+
+.rank {
+  font-size: 0.62rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  padding: 0.1rem 0.2rem;
+  cursor: pointer;
+}
+
+.rank:focus {
+  outline: none;
+  border-color: var(--amber-dim);
+}
+
+.slot {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.45rem 0.3rem;
+  cursor: pointer;
+  user-select: none;
+  text-align: center;
+  transition: border-color 0.12s, transform 0.05s;
+}
+
+.slot:hover {
+  border-color: var(--amber-dim);
+}
+
+.slot:active {
+  transform: scale(0.97);
+}
+
+.slot__key {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.slot__time {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+  min-height: 0.9rem;
+}
+
+.slot--ticking {
+  border-color: var(--amber-dim);
+}
+
+.slot--ticking .slot__time {
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+
+.slot--ticking .slot__key {
+  color: var(--amber);
+}
+
+/* Progress fill (drains as the cooldown counts down). */
+.slot__fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--amber);
+  width: 0%;
+  transition: width 0.12s linear;
+}
+
+.slot--summoner.slot--ticking {
+  border-color: var(--indigo);
+}
+
+.slot--summoner.slot--ticking .slot__key,
+.slot--summoner.slot--ticking .slot__time {
+  color: #a5b4fc;
+}
+
+.slot--summoner.slot--ticking .slot__fill {
+  background: var(--indigo);
+}

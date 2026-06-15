@@ -10,6 +10,10 @@ recognizer needs to rebuild and normalize inputs identically.
 """
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 import argparse
 import json
 from pathlib import Path

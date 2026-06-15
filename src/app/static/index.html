@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>League Timer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>League Timer</h1>
+        <p class="subtitle">Local · model-assisted · click to track</p>
+      </div>
+      <div class="spacer"></div>
+      <div id="conn" class="conn conn--off">connecting…</div>
+    </header>
+
+    <main>
+      <form id="add-form" class="add-form" autocomplete="off">
+        <input
+          id="add-input"
+          type="text"
+          placeholder="Add champion (e.g. Ezreal)"
+          aria-label="Champion name"
+        />
+        <button type="submit" class="btn-primary">Add</button>
+      </form>
+
+      <p id="empty" class="empty">
+        Add a champion. If it has a trained model (e.g. <code>Ezreal</code>),
+        casts are detected automatically. Set level, ability haste (AH), and
+        summoner haste (SSH) so timers use the right cooldown. Click any
+        ability or summoner to start its timer; right-click to reset.
+      </p>
+
+      <section id="cards" class="cards"></section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

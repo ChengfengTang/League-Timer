@@ -16,6 +16,12 @@ Outputs:
 """
 from __future__ import annotations
 
+import os
+
+# X3D uses avg_pool3d, which MPS doesn't implement; allow CPU fallback for that op.
+# Must be set before torch is first imported.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 import argparse
 import json
 from pathlib import Path
@@ -29,7 +35,33 @@ from src.common import video as vu
 from src.common.config import Config
 from src.common.torch_utils import pick_device
 from src.dataset.clip_dataset import ClipTransform
+from src.localize import Localizer
 from src.train.model import build_model
+
+
+def _localizer_from_ckpt(ckpt: Dict) -> Localizer | None:
+    if not ckpt.get("localize_enabled"):
+        return None
+    loc_cfg = ckpt.get("localize")
+    if not loc_cfg:
+        return None
+    return Localizer.from_config(loc_cfg, base_dir=".")
+
+
+def prepare_model_clip(clip: np.ndarray, ckpt: Dict,
+                       localizer: Localizer | None) -> np.ndarray | None:
+    """Match training preprocessing: localize + crop, or legacy full-frame fit."""
+    crop_size = int(ckpt["crop_size"])
+    if localizer is not None:
+        det = localizer.locate_clip(clip)
+        if det is None:
+            return None
+        return vu.crop_clip_to_box(clip, det.box, crop_size)
+    return vu.preprocess_clip(
+        clip, crop_size,
+        hud_mask=ckpt.get("hud_mask") or [],
+        frame_mode=str(ckpt.get("frame_mode", "letterbox")),
+    )
 
 
 def load_model(checkpoint: str, device: torch.device):
@@ -55,7 +87,7 @@ def sliding_window_scores(
     sample_fps = float(ckpt["sample_fps"])
     crop_size = int(ckpt["crop_size"])
     frame_mode = str(ckpt.get("frame_mode", "center_crop"))
-    hud_mask = ckpt.get("hud_mask") or []
+    localizer = _localizer_from_ckpt(ckpt)
     clip_dur = num_frames / sample_fps
 
     transform = ClipTransform(crop_size, ckpt["mean"], ckpt["std"], train=False,
@@ -70,6 +102,7 @@ def sliding_window_scores(
     probs: List[np.ndarray] = []
     batch: List[torch.Tensor] = []
     batch_times: List[float] = []
+    skipped = 0
 
     def flush():
         if not batch:
@@ -86,12 +119,17 @@ def sliding_window_scores(
     for c in tqdm(centers, desc="scanning"):
         clip = vu.sample_clip(video_path, center_sec=float(c), num_frames=num_frames,
                               sample_fps=sample_fps, resize_short=None)
-        clip = vu.preprocess_clip(clip, crop_size, hud_mask=hud_mask, frame_mode=frame_mode)
+        clip = prepare_model_clip(clip, ckpt, localizer)
+        if clip is None:
+            skipped += 1
+            continue
         batch.append(transform(clip))
         batch_times.append(float(c))
         if len(batch) >= batch_size:
             flush()
     flush()
+    if skipped:
+        print(f"  ({skipped} windows skipped: champion not localized)")
 
     order = np.argsort(times)
     return np.array(times)[order], np.array(probs)[order]
@@ -158,6 +196,25 @@ def _nearest_idx(times: np.ndarray, t: float) -> int:
     return int(np.argmin(np.abs(times - t)))
 
 
+def _put_centered_text(
+    frame: np.ndarray,
+    text: str,
+    cx: int,
+    y: int,
+    scale: float,
+    color: Tuple[int, int, int],
+    thickness: int,
+    outline: Tuple[int, int, int] = (0, 0, 0),
+    outline_thick: int = 6,
+) -> None:
+    (tw, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+    x = int(cx - tw / 2)
+    cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, outline,
+                outline_thick, cv2.LINE_AA)
+    cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color,
+                thickness, cv2.LINE_AA)
+
+
 def render_overlay(
     video_path: str,
     out_path: Path,
@@ -181,34 +238,32 @@ def render_overlay(
         if not ok:
             break
         t = f / fps
-        margin_x = 10
-        margin_bottom = 20
-        line_h = 34
+        cx = w // 2
+        readout_scale = 2.4
+        cast_scale = 1.6
+        line_h = 52
 
-        # live top-1 ability readout from nearest scored window
+        # Live top-1 ability readout — large, top-center.
         if len(times):
             j = _nearest_idx(times, t)
             best_i = max(ability_idx, key=lambda i: probs[j, i])
             readout = f"{classes[best_i]} {probs[j, best_i]:.2f}"
         else:
             readout = "-"
-        readout_y = h - margin_bottom
-        cv2.putText(frame, readout, (margin_x, readout_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (0, 0, 0), 4, cv2.LINE_AA)
-        cv2.putText(frame, readout, (margin_x, readout_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
-                    (0, 255, 255), 2, cv2.LINE_AA)
-        # flash detected events (stack upward from bottom, above readout)
+        readout_y = 64
+        _put_centered_text(frame, readout, cx, readout_y, readout_scale,
+                           (0, 255, 255), 3, outline_thick=8)
+
+        # Flash detected events just below the readout, also centered.
         active = [e for e in events if 0 <= (t - e["time"]) <= flash_sec]
-        cast_base_y = readout_y - 36
+        cast_y = readout_y + 48
         for k, e in enumerate(active):
             label = f"CAST {e['ability']} ({e['score']:.2f})"
-            y = cast_base_y - line_h * k
-            if y < 40:
+            y = cast_y + line_h * k
+            if y > h - 40:
                 break
-            cv2.putText(frame, label, (margin_x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                        (0, 0, 0), 5, cv2.LINE_AA)
-            cv2.putText(frame, label, (margin_x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
-                        (0, 80, 255), 2, cv2.LINE_AA)
+            _put_centered_text(frame, label, cx, y, cast_scale, (0, 80, 255), 3,
+                               outline_thick=7)
         writer.write(frame)
         f += 1
     cap.release()
@@ -224,7 +279,9 @@ def run(config_path: str, video_path: str, checkpoint: str, out_dir: str,
 
     model, ckpt = load_model(checkpoint, device)
     classes = ckpt["classes"]
-    print(f"Loaded {ckpt['backbone']} ({ckpt.get('champion', '?')}), classes={classes}")
+    loc = "localize+crop" if ckpt.get("localize_enabled") else "full-frame"
+    print(f"Loaded {ckpt['backbone']} ({ckpt.get('champion', '?')}), "
+          f"classes={classes}, preprocess={loc}")
 
     times, probs = sliding_window_scores(
         video_path, model, ckpt, device,

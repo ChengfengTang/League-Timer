@@ -200,15 +200,89 @@ Useful flags:
 > terminal / IDE, then restart the command. Capture the same resolution/zoom you
 > trained on for best results; keep the game on the captured monitor.
 
+## Web app (timer UI + auto-detection)
+
+A local web app that tracks ability and summoner-spell cooldowns. Add a
+champion and the model auto-starts timers when it detects a cast; click any
+ability/summoner to start it manually.
+
+```bash
+python -m src.app.server      # then open http://127.0.0.1:8000
+```
+
+How it works:
+
+- One Python process serves the static UI (`src/app/static/`) and a `/ws`
+  WebSocket that streams timer state ~4x/sec.
+- Adding a champion that has both `configs/<slug>.yaml` and
+  `models/<slug>/best.pt` (e.g. **Ezreal**) starts a `LiveDetector`
+  (`src/app/detector.py`, the same tuned capture/inference loop as
+  `src.infer.live`). Detected `Flash`/`W`/`E`/`R` casts auto-start that
+  champion's timers.
+- Champions without a model are **manual-only** — the card shows only tracked
+  abilities/summoners from the config (`infer.track` + `timers.summoners`).
+- Ability base CDs live in `configs/<champion>.yaml` (`timers.abilities`).
+  Summoner base CDs use a built-in table in `src/app/cooldowns.py` (Flash 300,
+  Ignite 180, etc.). Ability haste, summoner haste, and per-rank scaling are
+  applied when a timer starts.
+
+### Sync ability cooldowns from Data Dragon
+
+Ability CDs are **not** fetched at runtime — they are stored in the champion
+config and must be refreshed after Riot patches. The sync script pulls the
+current patch from [Data Dragon](https://developer.riotgames.com/docs/lol#data-dragon)
+and updates `timers.abilities` for abilities listed in `infer.track` (skips Q
+and summoners):
+
+```bash
+python scripts/sync_timer_cds.py ezreal
+```
+
+Pin a specific patch if needed:
+
+```bash
+python scripts/sync_timer_cds.py ezreal --version 16.12.1
+```
+
+Restart the web server after syncing so it picks up the new yaml.
+
+Config (`configs/<champion>.yaml`):
+
+```yaml
+timers:
+  abilities:        # base CDs from Data Dragon — run scripts/sync_timer_cds.py
+    W: 8
+    E: [26, 23, 20, 17, 14]
+    R: [120, 105, 90]
+  summoners: [Flash]   # summoners this champion's model can auto-detect
+  class_to_key: {}     # optional model-class -> timer-key remap (identity if empty)
+```
+
+Env overrides: `LEAGUE_TIMER_HOST`, `LEAGUE_TIMER_PORT` (default `127.0.0.1:8000`),
+`LEAGUE_TIMER_DEVICE` (`auto`|`cpu`|`mps`|`cuda`).
+
+> Same macOS Screen Recording note as Live applies — the prompt appears when you
+> add the first modeled champion (that's when capture begins).
+>
+> Scope: one auto-detector runs at a time (single screen, ~230 ms/inference); a
+> second modeled champion added while one is running stays manual-only. No voice
+> (input or parsing) — manual tracking is click-only.
+
 ## Adding a new champion
 
 Copy `configs/ezreal.yaml` to `configs/<champion>.yaml`, adjust `champion` and
-(if the kit needs it) the class list and thresholds, then repeat steps 1-6.
+(if the kit needs it) the class list and thresholds, then repeat steps 1-6. Seed
+ability CDs from Data Dragon:
+
+```bash
+python scripts/sync_timer_cds.py <champion>
+```
 
 ## Repo layout
 
 ```
 configs/        per-champion YAML configs
+scripts/        utilities (e.g. sync_timer_cds.py — refresh timers from DDRagon)
 data/
   raw_videos/   recorded gameplay (git-ignored)
   annotations/  timestamp label JSON (git-ignored)
@@ -220,6 +294,7 @@ src/
   localize/     champion localization (healthbar + name templates) + preview
   train/        model + training loop
   infer/        sliding-window recognizer + evaluation + live screen capture
+  app/          web app: FastAPI server, cooldown engine, LiveDetector, static UI
 models/         trained checkpoints (git-ignored; see below)
 outputs/        predicted events + overlay videos (git-ignored)
 AGENTS.md       detection tuning notes (recall > precision)
@@ -233,8 +308,10 @@ change every retrain and are easy to regenerate with `src.train.train`. Only
 ## Roadmap (post-MVP)
 
 - ~~Live recognition from screen capture~~ — done, see `src.infer.live`.
+- ~~Cooldown timer UI driven by the model~~ — done, see `src.app.server`.
 - ~~Per-champion cropping to reduce background noise~~ — done, see `localize:`
   and `src/localize/` (healthbar localization + champion-centred crops).
+- Web app: multiple concurrent auto-detectors and per-champion summoner-spell presets.
 - Multiple champions on screen: localizer interface is multi-champion ready;
   wire `name_templates` + flip `assume_single_enemy: false` and integrate the
   crop step into `recognize.py` / `live.py`.
