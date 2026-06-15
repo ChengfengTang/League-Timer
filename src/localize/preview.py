@@ -5,8 +5,8 @@ region the classifier will see) onto every frame and writes an output video.
 
 Run::
 
-    python -m src.localize.preview --config configs/ezreal.yaml \
-        --video data/raw_videos/test.mp4 --out outputs/loc_test.mp4
+    python -m src.localize.preview --config configs/{ChampionName}.yaml \
+        --video data/{ChampionName}/raw_videos/test.mp4 --out outputs/loc_test.mp4
 
 Tip: real games have several enemies, so set ``localize.assume_single_enemy:
 false`` and provide ``name_templates`` to keep only the tracked champion.

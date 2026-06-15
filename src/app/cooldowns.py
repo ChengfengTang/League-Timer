@@ -15,6 +15,8 @@ import time
 import uuid
 from typing import Dict, List, Optional, Union
 
+from src.app.skill_order import parse_skill_order, ranks_at_level
+
 # Base cooldowns for summoners we might track (seconds).
 SUMMONER_BASE: Dict[str, float] = {
     "Flash": 300,
@@ -105,11 +107,17 @@ class _Champion:
         summoner_keys: List[str],
         auto: bool,
         class_to_key: Optional[Dict[str, str]] = None,
+        skill_order: Optional[Dict[int, Dict[str, int]]] = None,
+        level_auto: bool = False,
+        detection_lag_sec: float = 0.0,
     ) -> None:
         self.id = uuid.uuid4().hex[:8]
         self.name = name
         self.auto = auto
         self.level = 1
+        self.level_auto = level_auto
+        self.detection_lag_sec = max(0.0, float(detection_lag_sec))
+        self.skill_order = dict(skill_order or {})
         self.ability_haste = 0
         self.summoner_haste = 0
         self.detector_status: Dict = {}
@@ -123,6 +131,17 @@ class _Champion:
         for key in summoner_keys:
             base = SUMMONER_BASE.get(key, 300.0)
             self.summoners[key] = _Slot(key, key, "summoner", [base])
+        if self.skill_order:
+            self._apply_ranks_for_level(self.level)
+
+    def _apply_ranks_for_level(self, level: int) -> None:
+        if not self.skill_order:
+            return
+        ranks = ranks_at_level(level, self.skill_order)
+        for key, rank in ranks.items():
+            slot = self.abilities.get(key)
+            if slot is not None:
+                slot.rank = min(5, max(1, int(rank)))
 
     def slot(self, key: str) -> Optional[_Slot]:
         return self.abilities.get(key) or self.summoners.get(key)
@@ -137,6 +156,8 @@ class _Champion:
             "name": self.name,
             "auto": self.auto,
             "level": self.level,
+            "level_auto": self.level_auto,
+            "skill_order": bool(self.skill_order),
             "ability_haste": self.ability_haste,
             "summoner_haste": self.summoner_haste,
             "detector_status": self.detector_status,
@@ -167,10 +188,21 @@ class CooldownEngine:
         summoner_keys: Optional[List[str]] = None,
         auto: bool = False,
         class_to_key: Optional[Dict[str, str]] = None,
+        skill_order: Optional[Dict] = None,
+        level_auto: bool = False,
+        detection_lag_sec: float = 0.0,
     ) -> Dict:
         with self._lock:
             champ = _Champion(
-                name, ability_cooldowns or {}, summoner_keys or [], auto, class_to_key)
+                name,
+                ability_cooldowns or {},
+                summoner_keys or [],
+                auto,
+                class_to_key,
+                skill_order=parse_skill_order(skill_order),
+                level_auto=level_auto,
+                detection_lag_sec=detection_lag_sec,
+            )
             self._champions[champ.id] = champ
             return champ.view(time.monotonic())
 
@@ -212,7 +244,9 @@ class CooldownEngine:
             slot = champ.slot(key)
             if slot is None:
                 return False
-            slot.trigger(time.monotonic(), champ._effective_total(slot))
+            now = time.monotonic()
+            eff = champ._effective_total(slot)
+            slot.trigger(now - champ.detection_lag_sec, eff)
             return True
 
     def set_level(self, champion_id: str, level: int) -> bool:
@@ -220,7 +254,12 @@ class CooldownEngine:
             champ = self._champions.get(champion_id)
             if champ is None:
                 return False
-            champ.level = min(18, max(1, int(level)))
+            new_level = min(18, max(1, int(level)))
+            if new_level == champ.level:
+                return True
+            champ.level = new_level
+            if champ.skill_order:
+                champ._apply_ranks_for_level(champ.level)
             return True
 
     def set_ability_haste(self, champion_id: str, haste: int) -> bool:

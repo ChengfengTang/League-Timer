@@ -2,10 +2,10 @@
 
 Run locally or on a cloud GPU::
 
-    python -m src.train.train --config configs/ezreal.yaml
+    python -m src.train.train --config configs/{ChampionName}.yaml
 
 Saves the best checkpoint (by macro-F1 over the ability classes, ignoring
-``background``) to ``models/<champion>/best.pt`` along with everything the
+``background``) to ``models/{ChampionName}/best.pt`` along with everything the
 recognizer needs to rebuild and normalize inputs identically.
 """
 from __future__ import annotations
@@ -85,7 +85,7 @@ def train(config_path: str, clips_root: str, models_root: str, device_str: str) 
     num_workers = int(tcfg.get("num_workers", 4))
     freeze_epochs = int(tcfg.get("freeze_backbone_epochs", 3))
 
-    manifest_path = Path(clips_root) / cfg.champion / "manifest.json"
+    manifest_path = Path(clips_root) / "manifest.json"
     if not manifest_path.exists():
         raise SystemExit(f"Manifest not found: {manifest_path}. Run the dataset builder first.")
 
@@ -190,11 +190,17 @@ def train(config_path: str, clips_root: str, models_root: str, device_str: str) 
 def main() -> None:
     p = argparse.ArgumentParser(description="Train the clip classifier.")
     p.add_argument("--config", required=True)
-    p.add_argument("--clips-root", default="data/clips")
+    p.add_argument("--clips-root", default=None, help="Defaults to data/{ChampionName}/clips")
     p.add_argument("--models-root", default="models")
     p.add_argument("--device", default="auto", help="auto | cpu | cuda | mps")
     args = p.parse_args()
-    train(args.config, args.clips_root, args.models_root, args.device)
+    cfg = Config.load(args.config)
+    train(
+        args.config,
+        args.clips_root or str(cfg.clips_dir()),
+        args.models_root,
+        args.device,
+    )
 
 
 if __name__ == "__main__":

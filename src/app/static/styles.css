@@ -247,6 +247,16 @@ main {
   border-color: var(--amber-dim);
 }
 
+.stat input:read-only {
+  color: var(--muted);
+  cursor: default;
+}
+
+.rank:disabled {
+  opacity: 0.75;
+  cursor: default;
+}
+
 .row-label {
   font-size: 0.66rem;
   text-transform: uppercase;

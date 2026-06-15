@@ -3,7 +3,7 @@
 Schema (one JSON file per source video)::
 
     {
-      "video": "ezreal_game1.mp4",      # filename, relative to data/raw_videos
+      "video": "game1.mp4",              # filename, relative to data/{ChampionName}/raw_videos
       "fps": 60.0,
       "events": [
         {"time": 12.34, "frame": 740, "ability": "Q"},

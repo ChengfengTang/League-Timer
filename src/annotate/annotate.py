@@ -1,13 +1,13 @@
 """Interactive timestamp annotator.
 
 Scrub a recorded gameplay video and press an ability key at the exact moment a
-spell is cast. Events are written to ``data/annotations/<video_stem>.json`` and
+spell is cast. Events are written to ``data/{ChampionName}/annotations/<video_stem>.json`` and
 re-loaded on the next run so you can resume.
 
 Run::
 
-    python -m src.annotate.annotate --config configs/ezreal.yaml \
-        --video data/raw_videos/ezreal_game1.mp4
+    python -m src.annotate.annotate --config configs/{ChampionName}.yaml \
+        --video data/{ChampionName}/raw_videos/game1.mp4
 
 This opens an OpenCV window; controls are printed on launch and shown on screen.
 """
@@ -251,11 +251,12 @@ def run(config_path: str, video_path: str, annotations_dir: str) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="Timestamp annotator for LoL ability casts.")
     p.add_argument("--config", required=True, help="Path to champion config YAML")
-    p.add_argument("--video", required=True, help="Path to a video in data/raw_videos")
-    p.add_argument("--annotations-dir", default="data/annotations",
-                   help="Where to read/write annotation JSON")
+    p.add_argument("--video", required=True, help="Path to a video in data/{ChampionName}/raw_videos")
+    p.add_argument("--annotations-dir", default=None,
+                   help="Where to read/write annotation JSON (default: data/{ChampionName}/annotations)")
     args = p.parse_args()
-    run(args.config, args.video, args.annotations_dir)
+    cfg = Config.load(args.config)
+    run(args.config, args.video, args.annotations_dir or str(cfg.annotations_dir()))
 
 
 if __name__ == "__main__":

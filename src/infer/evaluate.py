@@ -6,9 +6,9 @@ precision / recall / F1 per ability plus a micro-average.
 
 Run::
 
-    python -m src.infer.evaluate --config configs/ezreal.yaml \
-        --pred outputs/ezreal_test.events.json \
-        --truth data/annotations/ezreal_test.json \
+    python -m src.infer.evaluate --config configs/{ChampionName}.yaml \
+        --pred outputs/test.events.json \
+        --truth data/{ChampionName}/annotations/test.json \
         --tolerance 0.5
 """
 from __future__ import annotations

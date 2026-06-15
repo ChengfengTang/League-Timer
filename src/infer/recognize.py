@@ -6,9 +6,9 @@ ability events via per-class thresholding + temporal non-max suppression.
 
 Run::
 
-    python -m src.infer.recognize --config configs/ezreal.yaml \
-        --video data/raw_videos/ezreal_test.mp4 \
-        --checkpoint models/ezreal/best.pt --overlay
+    python -m src.infer.recognize --config configs/{ChampionName}.yaml \
+        --video data/{ChampionName}/raw_videos/test.mp4 \
+        --checkpoint models/{ChampionName}/best.pt --overlay
 
 Outputs:
   - outputs/<stem>.events.json : [{"ability", "time", "score"}, ...]

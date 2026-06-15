@@ -15,6 +15,25 @@
   let champions = [];
   let recvAt = perfSec();
   const cardEls = new Map();
+  const timerMeta = new Map();
+
+  function slotId(champId, key) {
+    return `${champId}:${key}`;
+  }
+
+  function announceReady(champion, key) {
+    if (!("speechSynthesis" in window)) return;
+    const utter = new SpeechSynthesisUtterance(`${champion} ${key} is back up`);
+    utter.rate = 1.05;
+    utter.pitch = 1;
+    speechSynthesis.speak(utter);
+  }
+
+  function clearTimerMeta(champId) {
+    for (const id of timerMeta.keys()) {
+      if (id.startsWith(`${champId}:`)) timerMeta.delete(id);
+    }
+  }
 
   function perfSec() {
     return performance.now() / 1000;
@@ -92,6 +111,7 @@
       if (!seen.has(id)) {
         entry.root.remove();
         cardEls.delete(id);
+        clearTimerMeta(id);
       }
     }
     update();
@@ -128,9 +148,14 @@
     const stats = document.createElement("div");
     stats.className = "stats";
 
+    const levelReadonly = champ.level_auto && champ.auto;
     const level = statInput("Lvl", 1, 18, (v) =>
       send({ type: "set_level", id: champ.id, level: v })
     );
+    if (levelReadonly) {
+      level.inp.readOnly = true;
+      level.inp.title = "Read from screen when auto-detection is running";
+    }
     const ah = statInput("AH", 0, null, (v) =>
       send({ type: "set_ability_haste", id: champ.id, haste: v })
     );
@@ -183,7 +208,12 @@
         if (!isSummoner) {
           rankSel = document.createElement("select");
           rankSel.className = "rank";
-          rankSel.title = "Ability rank";
+          rankSel.title = champ.skill_order
+            ? "Set automatically from champion level"
+            : "Ability rank";
+          if (champ.skill_order) {
+            rankSel.disabled = true;
+          }
           for (let r = 1; r <= 5; r++) {
             const opt = document.createElement("option");
             opt.value = String(r);
@@ -217,6 +247,7 @@
       badgeEl: badge,
       slots,
       levelIn: level.inp,
+      levelReadonly,
       ahIn: ah.inp,
       sshIn: ssh.inp,
     });
@@ -257,6 +288,8 @@
     let line = "";
     if (champ.auto && st.capture_fps != null && !st.error) {
       line = `${st.capture_fps.toFixed(0)} fps`;
+      if (st.level != null) line += ` · lvl ${st.level}`;
+      else if (st.level_read_miss) line += ` · ${st.level_read_miss}`;
       if (st.top1) line += ` · ${st.top1} ${(st.top1_score ?? 0).toFixed(2)}`;
     } else if (st.error) {
       line = st.error;
@@ -286,6 +319,27 @@
 
         const remaining = Math.max(0, (slot.remaining || 0) - elapsed);
         const ticking = remaining > 0.05;
+        const id = slotId(champ.id, slot.key);
+        const now = perfSec();
+        let meta = timerMeta.get(id);
+
+        if (ticking) {
+          if (!meta || !meta.ticking) {
+            timerMeta.set(id, {
+              ticking: true,
+              endAt: now + remaining,
+              announced: false,
+            });
+          } else {
+            meta.endAt = now + remaining;
+          }
+        } else if (meta?.ticking && !meta.announced && now >= meta.endAt - 0.12) {
+          announceReady(champ.name, slot.key);
+          timerMeta.set(id, { ticking: false, announced: true });
+        } else {
+          timerMeta.set(id, { ticking: false, announced: meta?.announced ?? false });
+        }
+
         ref.el.classList.toggle("slot--ticking", ticking);
         ref.el.title = `${slot.label} — ${slot.effective_cd}s CD · click to start, right-click to reset`;
         ref.timeEl.textContent = ticking ? fmt(remaining) : "";

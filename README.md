@@ -16,7 +16,7 @@ over new video to emit timestamped ability events.
 record video -> annotate (timestamps) -> build clips -> train (cloud) -> recognize -> evaluate
 ```
 
-Each stage reads the same per-champion config (`configs/<champion>.yaml`), so the
+Each stage reads the same per-champion config (`configs/{ChampionName}.yaml`), so the
 clip length / fps / classes stay consistent end to end.
 
 For a higher-level engineering write-up of the model, image-processing pipeline,
@@ -39,7 +39,7 @@ your platform:
 
 ## 1. Record gameplay
 
-Put recordings in `data/raw_videos/`. Guidelines that make labelling and training
+Put recordings in `data/{ChampionName}/raw_videos/`. Guidelines that make labelling and training
 much easier:
 
 - **One champion per recording session** (the champion you're training).
@@ -58,13 +58,13 @@ much easier:
 Scrub a video and press a key at the moment each ability is cast:
 
 ```bash
-python -m src.annotate.annotate --config configs/ezreal.yaml \
-    --video data/raw_videos/ezreal_game1.mp4
+python -m src.annotate.annotate --config configs/{ChampionName}.yaml \
+    --video data/{ChampionName}/raw_videos/game1.mp4
 ```
 
 Controls are printed on launch (play/pause, frame step, seek, press `Q/W/E/R` to
 log a cast, undo, delete-near, save). Output goes to
-`data/annotations/<video_stem>.json`. Re-running on the same video resumes from
+`data/{ChampionName}/annotations/<video_stem>.json`. Re-running on the same video resumes from
 the existing annotations.
 
 ## 3. Build the clip dataset
@@ -73,10 +73,10 @@ Turn timestamp events into fixed-length training clips (positives) plus sampled
 `background` windows (negatives), with a train/val split:
 
 ```bash
-python -m src.dataset.build --config configs/ezreal.yaml
+python -m src.dataset.build --config configs/{ChampionName}.yaml
 ```
 
-Writes clips under `data/clips/<champion>/` and a `manifest.json` describing the
+Writes clips under `data/{ChampionName}/clips/` and a `manifest.json` describing the
 split. Clips are stored as `.npy` frame stacks so training doesn't re-decode
 video.
 
@@ -129,8 +129,8 @@ The interface returns a list of `(champion, box)` for multi-champion tracking
 Preview the localizer on any video (red outline = estimated bar, green = crop):
 
 ```bash
-python -m src.localize.preview --config configs/ezreal.yaml \
-    --video data/raw_videos/test.mp4 --out outputs/loc_test.mp4
+python -m src.localize.preview --config configs/{ChampionName}.yaml \
+    --video data/{ChampionName}/raw_videos/test.mp4 --out outputs/loc_test.mp4
 ```
 
 Like the preprocessing keys, changing `localize:` means you must **rebuild**.
@@ -140,18 +140,18 @@ Like the preprocessing keys, changing `localize:` means you must **rebuild**.
 Train locally or on a cloud GPU (CUDA recommended):
 
 ```bash
-python -m src.train.train --config configs/ezreal.yaml
+python -m src.train.train --config configs/{ChampionName}.yaml
 ```
 
-Checkpoints land in `models/<champion>/best.pt`. Training prints per-class
+Checkpoints land in `models/{ChampionName}/best.pt`. Training prints per-class
 precision/recall and a confusion matrix on the validation split.
 
 ## 5. Recognize (sliding window over a video)
 
 ```bash
-python -m src.infer.recognize --config configs/ezreal.yaml \
-    --video data/raw_videos/ezreal_test.mp4 \
-    --checkpoint models/ezreal/best.pt \
+python -m src.infer.recognize --config configs/{ChampionName}.yaml \
+    --video data/{ChampionName}/raw_videos/test.mp4 \
+    --checkpoint models/{ChampionName}/best.pt \
     --overlay
 ```
 
@@ -163,9 +163,9 @@ and, with `--overlay`, an annotated `.mp4` drawing detections for eyeballing.
 Score predicted events against hand labels with a time tolerance:
 
 ```bash
-python -m src.infer.evaluate --config configs/ezreal.yaml \
-    --pred outputs/ezreal_test.events.json \
-    --truth data/annotations/ezreal_test.json
+python -m src.infer.evaluate --config configs/{ChampionName}.yaml \
+    --pred outputs/test.events.json \
+    --truth data/{ChampionName}/annotations/test.json
 ```
 
 Prints event-level precision / recall / F1 per ability. Use the misses to decide
@@ -177,8 +177,8 @@ Watch your screen *as you play* and print `CAST W/E/R/Flash` the moment an
 ability fires (same model + thresholds as the offline recognizer):
 
 ```bash
-python -m src.infer.live --config configs/ezreal.yaml \
-    --checkpoint models/ezreal/best.pt
+python -m src.infer.live --config configs/{ChampionName}.yaml \
+    --checkpoint models/{ChampionName}/best.pt
 ```
 
 A background thread grabs frames into a rolling one-clip buffer at the model's
@@ -218,14 +218,14 @@ How it works:
 
 - One Python process serves the static UI (`src/app/static/`) and a `/ws`
   WebSocket that streams timer state ~4x/sec.
-- Adding a champion that has both `configs/<slug>.yaml` and
-  `models/<slug>/best.pt` (e.g. **Ezreal**) starts a `LiveDetector`
+- Adding a champion that has both `configs/{ChampionName}.yaml` and
+  `models/{ChampionName}/best.pt` starts a `LiveDetector`
   (`src/app/detector.py`, the same tuned capture/inference loop as
   `src.infer.live`). Detected `Flash`/`W`/`E`/`R` casts auto-start that
   champion's timers.
 - Champions without a model are **manual-only** — the card shows only tracked
   abilities/summoners from the config (`infer.track` + `timers.summoners`).
-- Ability base CDs live in `configs/<champion>.yaml` (`timers.abilities`).
+- Ability base CDs live in `configs/{ChampionName}.yaml` (`timers.abilities`).
   Summoner base CDs use a built-in table in `src/app/cooldowns.py` (Flash 300,
   Ignite 180, etc.). Ability haste, summoner haste, and per-rank scaling are
   applied when a timer starts.
@@ -239,18 +239,18 @@ and updates `timers.abilities` for abilities listed in `infer.track` (skips Q
 and summoners):
 
 ```bash
-python scripts/sync_timer_cds.py ezreal
+python scripts/sync_timer_cds.py {ChampionName}
 ```
 
 Pin a specific patch if needed:
 
 ```bash
-python scripts/sync_timer_cds.py ezreal --version 16.12.1
+python scripts/sync_timer_cds.py {ChampionName} --version 16.12.1
 ```
 
 Restart the web server after syncing so it picks up the new yaml.
 
-Config (`configs/<champion>.yaml`):
+Config (`configs/{ChampionName}.yaml`):
 
 ```yaml
 timers:
@@ -274,12 +274,12 @@ Env overrides: `LEAGUE_TIMER_HOST`, `LEAGUE_TIMER_PORT` (default `127.0.0.1:8000
 
 ## Adding a new champion
 
-Copy `configs/ezreal.yaml` to `configs/<champion>.yaml`, adjust `champion` and
+Copy an existing champion config to `configs/{ChampionName}.yaml`, adjust `champion` and
 (if the kit needs it) the class list and thresholds, then repeat steps 1-6. Seed
 ability CDs from Data Dragon:
 
 ```bash
-python scripts/sync_timer_cds.py <champion>
+python scripts/sync_timer_cds.py {ChampionName}
 ```
 
 ## Repo layout
@@ -288,9 +288,10 @@ python scripts/sync_timer_cds.py <champion>
 configs/        per-champion YAML configs
 scripts/        utilities (e.g. sync_timer_cds.py — refresh timers from DDRagon)
 data/
-  raw_videos/   recorded gameplay (git-ignored)
-  annotations/  timestamp label JSON (git-ignored)
-  clips/        extracted training clips + manifest (git-ignored)
+  {ChampionName}/  per-champion data (git-ignored)
+    raw_videos/  recorded gameplay
+    annotations/ timestamp label JSON
+    clips/       extracted training clips + manifest
 src/
   common/       config, video sampling, annotation schema, torch helpers
   annotate/     timestamp annotation tool
@@ -304,7 +305,7 @@ outputs/        predicted events + overlay videos (git-ignored)
 AGENTS.md       detection tuning notes (recall > precision)
 ```
 
-`models/` is git-ignored for the same reason as `data/clips/`: checkpoints are
+`models/` is git-ignored for the same reason as `data/{ChampionName}/clips/`: checkpoints are
 large binary artifacts (~10 MB each) produced by training, not source. They
 change every retrain and are easy to regenerate with `src.train.train`. Only
 `models/.gitkeep` is tracked so the directory exists after clone.

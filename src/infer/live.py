@@ -9,8 +9,8 @@ the moment an ability fires.
 
 Run::
 
-    python -m src.infer.live --config configs/ezreal.yaml \
-        --checkpoint models/ezreal/best.pt
+    python -m src.infer.live --config configs/{ChampionName}.yaml \
+        --checkpoint models/{ChampionName}/best.pt
 
 macOS note: the first run will prompt for Screen Recording permission
 (System Settings -> Privacy & Security -> Screen Recording). Grant it to your

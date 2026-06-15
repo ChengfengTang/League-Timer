@@ -46,8 +46,15 @@ def champion_assets(name: str):
 
 def timer_spec_from_config(
     config_path: Path,
-) -> tuple[Dict[str, Union[float, List[float]]], List[str], Dict[str, str]]:
-    """Read tracked abilities, summoners, and class mapping from a champion yaml."""
+) -> tuple[
+    Dict[str, Union[float, List[float]]],
+    List[str],
+    Dict[str, str],
+    Dict,
+    bool,
+    float,
+]:
+    """Read tracked abilities, summoners, skill order, and class mapping."""
     cfg = Config.load(str(config_path))
     infer = cfg.section("infer")
     timers = cfg.section("timers")
@@ -68,7 +75,10 @@ def timer_spec_from_config(
     class_to_key = {
         str(k): str(v) for k, v in (timers.get("class_to_key") or {}).items()
     }
-    return ability_cds, summoners, class_to_key
+    skill_order = timers.get("skill_order") or {}
+    level_auto = bool(timers.get("level_auto", bool(skill_order)))
+    detection_lag_sec = float(timers.get("detection_lag_sec", 0.0))
+    return ability_cds, summoners, class_to_key, skill_order, level_auto, detection_lag_sec
 
 
 class DetectionManager:
@@ -97,6 +107,9 @@ class DetectionManager:
             engine.on_detection(champion_id, ability)
 
         def on_status(status: Dict) -> None:
+            level = status.get("level")
+            if level is not None:
+                engine.set_level(champion_id, int(level))
             engine.set_detector_status(champion_id, status)
 
         det = LiveDetector(
@@ -199,9 +212,12 @@ async def _handle_message(app: FastAPI, data: Dict) -> Optional[Dict]:
         ability_cds: Dict[str, Union[float, List[float]]] = {}
         summoner_keys: List[str] = []
         class_to_key: Dict[str, str] = {}
+        skill_order: Dict = {}
+        level_auto = False
+        detection_lag_sec = 0.0
         if config_path is not None:
-            ability_cds, summoner_keys, class_to_key = timer_spec_from_config(
-                config_path)
+            ability_cds, summoner_keys, class_to_key, skill_order, level_auto, detection_lag_sec = (
+                timer_spec_from_config(config_path))
         will_auto = model_path is not None and config_path is not None and not manager.busy
         champ = engine.add_champion(
             name,
@@ -209,6 +225,9 @@ async def _handle_message(app: FastAPI, data: Dict) -> Optional[Dict]:
             summoner_keys=summoner_keys,
             auto=will_auto,
             class_to_key=class_to_key,
+            skill_order=skill_order,
+            level_auto=level_auto,
+            detection_lag_sec=detection_lag_sec,
         )
         if will_auto:
             started = await manager.maybe_start(champ["id"], config_path, model_path)

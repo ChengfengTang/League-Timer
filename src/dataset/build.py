@@ -10,7 +10,7 @@ split for every clip.
 
 Run::
 
-    python -m src.dataset.build --config configs/ezreal.yaml
+    python -m src.dataset.build --config configs/{ChampionName}.yaml
 """
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
 
     raw_dir = Path(raw_dir)
     annotations_dir = Path(annotations_dir)
-    out_dir = Path(clips_root) / cfg.champion
+    out_dir = Path(clips_root)
     frames_dir = out_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     # Drop clips from a prior build so a rebuild doesn't leave stale .npy on disk.
@@ -212,11 +212,17 @@ def build(config_path: str, raw_dir: str, annotations_dir: str, clips_root: str)
 def main() -> None:
     p = argparse.ArgumentParser(description="Build training clips from timestamp annotations.")
     p.add_argument("--config", required=True)
-    p.add_argument("--raw-dir", default="data/raw_videos")
-    p.add_argument("--annotations-dir", default="data/annotations")
-    p.add_argument("--clips-root", default="data/clips")
+    p.add_argument("--raw-dir", default=None, help="Defaults to data/{ChampionName}/raw_videos")
+    p.add_argument("--annotations-dir", default=None, help="Defaults to data/{ChampionName}/annotations")
+    p.add_argument("--clips-root", default=None, help="Defaults to data/{ChampionName}/clips")
     args = p.parse_args()
-    build(args.config, args.raw_dir, args.annotations_dir, args.clips_root)
+    cfg = Config.load(args.config)
+    build(
+        args.config,
+        args.raw_dir or str(cfg.raw_videos_dir()),
+        args.annotations_dir or str(cfg.annotations_dir()),
+        args.clips_root or str(cfg.clips_dir()),
+    )
 
 
 if __name__ == "__main__":

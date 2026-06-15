@@ -329,7 +329,7 @@ epochs: 25
 ```
 
 The code does not simply keep the final epoch. It evaluates after each epoch and
-saves `models/<champion>/best.pt` when ability macro-F1 improves. This matters
+saves `models/{ChampionName}/best.pt` when ability macro-F1 improves. This matters
 because the best validation model may happen before the final epoch, especially
 on a small dataset where overfitting can start late in training.
 
@@ -408,7 +408,7 @@ hiding real events.
 
 The web app wraps the live detector with a cooldown engine. It serves a local UI
 with FastAPI and streams timer state over WebSocket. Adding Ezreal starts the
-detector if both `configs/ezreal.yaml` and `models/ezreal/best.pt` exist.
+detector if both `configs/{ChampionName}.yaml` and `models/{ChampionName}/best.pt` exist.
 
 The UI only shows abilities and summoners that are actually tracked. For Ezreal,
 that means `W`, `E`, `R`, and `Flash`, not every summoner spell and not Q.
@@ -432,7 +432,7 @@ ability base cooldowns from Data Dragon after Riot patches.
 
 ## Configuration Guide
 
-The project is config-driven. `configs/ezreal.yaml` defines the classes, clip
+The project is config-driven. `configs/{ChampionName}.yaml` defines the classes, clip
 shape, localization settings, training hyperparameters, inference thresholds,
 live tuning, and cooldown timers.
 
@@ -440,9 +440,9 @@ live tuning, and cooldown timers.
 
 The champion slug. It determines output paths such as:
 
-- `data/clips/ezreal`
-- `models/ezreal/best.pt`
-- `configs/ezreal.yaml`
+- `data/{ChampionName}/clips`
+- `models/{ChampionName}/best.pt`
+- `configs/{ChampionName}.yaml`
 
 ### `classes`
 

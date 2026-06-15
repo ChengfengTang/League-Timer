@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Sync timers.abilities in a champion config from live Data Dragon CDs.
 
-The web app reads base cooldowns from configs/<champion>.yaml (timers.abilities).
+The web app reads base cooldowns from configs/{ChampionName}.yaml (timers.abilities).
 This script fetches the current patch from ddragon and updates only the abilities
 listed in infer.track (excluding Q and summoners).
 

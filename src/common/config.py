@@ -99,3 +99,16 @@ class Config:
 
     def section(self, name: str) -> Dict[str, Any]:
         return dict(self.raw.get(name, {}))
+
+    # --- per-champion data layout (data/{ChampionName}/...) ----------------
+    def data_dir(self, base: str = "data") -> Path:
+        return Path(base) / self.champion
+
+    def raw_videos_dir(self, base: str = "data") -> Path:
+        return self.data_dir(base) / "raw_videos"
+
+    def annotations_dir(self, base: str = "data") -> Path:
+        return self.data_dir(base) / "annotations"
+
+    def clips_dir(self, base: str = "data") -> Path:
+        return self.data_dir(base) / "clips"

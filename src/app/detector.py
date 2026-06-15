@@ -21,7 +21,8 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 import threading
 import time
-from typing import Callable, Dict, List, Optional
+from collections import Counter, deque
+from typing import Callable, Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -37,10 +38,32 @@ from src.infer.live import (
     resolve_region,
 )
 from src.infer.recognize import _localizer_from_ckpt, load_model
+from src.localize.level_reader import LevelReader
 
 # Callback signatures.
 EventCallback = Callable[[str, float, float], None]      # (ability, score, clip_time)
 StatusCallback = Callable[[Dict], None]                  # arbitrary status dict
+
+
+class _LevelStabilizer:
+    """Require repeated reads before emitting a level change."""
+
+    def __init__(self, window: int = 5, min_agree: int = 2) -> None:
+        self._window = window
+        self._min_agree = min_agree
+        self._history: Deque[int] = deque(maxlen=window)
+        self._last: Optional[int] = None
+
+    def push(self, level: int, confidence: float, min_conf: float = 0.5) -> Optional[int]:
+        if confidence < min_conf:
+            return self._last
+        self._history.append(int(level))
+        if len(self._history) < self._min_agree:
+            return self._last
+        level, count = Counter(self._history).most_common(1)[0]
+        if count >= self._min_agree:
+            self._last = level
+        return self._last
 
 
 class LiveDetector:
@@ -81,6 +104,14 @@ class LiveDetector:
         self.frame_mode = str(self.ckpt.get("frame_mode", "center_crop"))
         self.hud_mask = self.ckpt.get("hud_mask") or []
         self.localizer = _localizer_from_ckpt(self.ckpt)
+        loc_cfg = cfg.section("localize")
+        lr_cfg = loc_cfg.get("level_read") or {}
+        self.level_reader = (
+            LevelReader.from_config(lr_cfg, base_dir=".")
+            if bool(lr_cfg.get("enabled"))
+            else None
+        )
+        self._level_stabilizer = _LevelStabilizer()
         self.clip_dur = self.num_frames / self.sample_fps
         self.transform = ClipTransform(
             self.crop_size, self.ckpt["mean"], self.ckpt["std"],
@@ -168,17 +199,41 @@ class LiveDetector:
                     if self.on_event:
                         self.on_event(e["ability"], float(e["score"]), float(e["time"]))
 
+                level_payload = {}
+                det = self.loc_cache.get("det")
+                if self.level_reader is not None and det is not None:
+                    center = clip[len(clip) // 2]
+                    dbg = self.level_reader.read_debug(center, det.bar)
+                    if dbg.get("box") is not None:
+                        x, y, w, h = dbg["box"]
+                        level_payload["level_roi"] = [x, y, w, h]
+                    hit = self.level_reader.read(center, det.bar)
+                    if hit is not None:
+                        level, conf = hit
+                        stable = self._level_stabilizer.push(
+                            level, conf, min_conf=self.level_reader.match_threshold)
+                        if stable is not None:
+                            level_payload["level"] = stable
+                            level_payload["level_confidence"] = round(conf, 2)
+                    elif dbg.get("scores"):
+                        best = max(dbg["scores"], key=dbg["scores"].get)
+                        level_payload["level_read_miss"] = (
+                            f"best {best}@{dbg['scores'][best]:.2f}"
+                        )
+
                 if self.on_status and (now - last_status) >= self.status_interval_sec:
                     last_status = now
                     best = max(self.detector.ability_idx, key=lambda i: probs[i])
-                    self.on_status({
+                    payload = {
                         "champion": self.champion,
                         "top1": self.classes[best],
                         "top1_score": float(probs[best]),
                         "capture_fps": float(grabber.capture_fps),
                         "loc_ms": float(loc_ms),
                         "model_ms": float(model_ms),
-                    })
+                    }
+                    payload.update(level_payload)
+                    self.on_status(payload)
         finally:
             grabber.stop()
             grabber.join(timeout=1.0)
