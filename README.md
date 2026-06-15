@@ -10,7 +10,7 @@ over new video to emit timestamped ability events.
 > recorded video files. Live screen capture and multi-champion-on-screen are
 > deliberate non-goals (see "Roadmap").
 
-[![Watch Video Demo]](https://drive.google.com/file/d/1iFoqqnDQptAq1k3ml819wMywCJUmYQx-/view?usp=sharing)
+[Watch Video Demo](https://drive.google.com/file/d/1iFoqqnDQptAq1k3ml819wMywCJUmYQx-/view?usp=sharing)
 ## Pipeline at a glance
 
 ```
