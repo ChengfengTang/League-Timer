@@ -19,6 +19,10 @@ record video -> annotate (timestamps) -> build clips -> train (cloud) -> recogni
 Each stage reads the same per-champion config (`configs/<champion>.yaml`), so the
 clip length / fps / classes stay consistent end to end.
 
+For a higher-level engineering write-up of the model, image-processing pipeline,
+and the full-screen to localize-then-classify evolution, see
+[`docs/technical-writeup.md`](docs/technical-writeup.md).
+
 ## Install
 
 ```bash
