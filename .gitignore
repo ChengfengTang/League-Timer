@@ -7,6 +7,14 @@ models/*
 # Inference outputs
 outputs/
 
+# Champion-specific tuning (copy configs/example.yaml locally, then tune)
+configs/*.yaml
+!configs/example.yaml
+
+# Name + level OCR templates (capture per champion / resolution)
+configs/templates/*
+!configs/templates/.gitkeep
+
 # Local caches (torch hub weights, pycache prefix, etc.)
 .torchhome/
 .cache/
@@ -14,7 +22,7 @@ outputs/
 *.mp4
 *.mkv
 *.mov
-!data/raw_videos/.gitkeep
+!data/**/.gitkeep
 
 # Rust / Tauri build output
 src-tauri/target/

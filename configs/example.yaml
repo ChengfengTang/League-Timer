@@ -1,0 +1,107 @@
+# Per-champion configuration template. Copy to configs/{champion}.yaml (git-ignored)
+# and tune for your champion, resolution, and recordings.
+#
+#   cp configs/example.yaml configs/ezreal.yaml
+#
+champion: ChampionName
+
+# Class order matters: index = label id. `background` must be present.
+classes:
+  - background
+  - Q
+  - W
+  - E
+  - R
+  - Flash
+
+# Clip sampling (used by the dataset builder and the recognizer)
+clip:
+  num_frames: 13
+  sample_fps: 13
+  crop_size: 182
+  frame_mode: letterbox
+  hud_mask:
+    - [0.25, 0.87, 0.50, 0.13]
+    - [0.80, 0.66, 0.20, 0.34]
+  spatial_jitter: 0.15
+
+localize:
+  enabled: true
+  box_size: 220
+  offset_y: 5
+  red_hsv: [[0, 120, 90], [10, 255, 255], [170, 120, 90], [180, 255, 255]]
+  green_hsv: [[35, 100, 90], [85, 255, 255]]
+  detect_green: true
+  bar_min_w: 55
+  bar_max_w: 220
+  bar_min_h: 4
+  bar_max_h: 22
+  bar_min_aspect: 5.0
+  ignore_regions:
+    - [0.0, 0.0, 0.17, 0.17]
+    - [0.60, 0.0, 0.40, 0.03]
+    - [0.0, 0.0, 0.045, 1.0]
+    - [0.25, 0.85, 0.50, 0.15]
+    - [0.78, 0.64, 0.22, 0.36]
+  name_first: true
+  assume_single_enemy: false
+  default_champion: ChampionName
+  name_templates:
+    ChampionName: configs/templates/champion_name.png
+  name_match_threshold: 0.6
+  level_read:
+    enabled: true
+    offset_x: -20
+    offset_y: 0
+    width: 20
+    height: 18
+    match_threshold: 0.45
+    digit_templates: configs/templates/level_digits
+
+dataset:
+  positive_offset_sec: 0.0
+  negatives_per_video: 40
+  negative_min_gap_sec: 1.0
+  val_fraction: 0.2
+  seed: 42
+
+train:
+  backbone: x3d_s
+  epochs: 25
+  batch_size: 8
+  lr: 0.0005
+  weight_decay: 0.0001
+  num_workers: 4
+  freeze_backbone_epochs: 3
+
+infer:
+  stride_sec: 0.1
+  # Short-CD abilities can stay in `classes` but omit from `track` (see AGENTS.md).
+  track:
+    - W
+    - E
+    - R
+  default_threshold: 0.98
+  thresholds: {}
+  nms_window_sec: 0.6
+  peak_only: true
+  min_margin: 0.12
+  live:
+    stride_sec: 0.2
+    default_threshold: 0.85
+    thresholds: {}
+    peak_only: false
+    min_margin: 0.08
+    nms_window_sec: 0.6
+    localize_cache_sec: 1.0
+
+timers:
+  detection_lag_sec: 1.0
+  abilities:
+    W: 8
+    E: [26, 23, 20, 17, 14]
+    R: [120, 105, 90]
+  summoners: []
+  level_auto: true
+  skill_order: {}
+  class_to_key: {}
