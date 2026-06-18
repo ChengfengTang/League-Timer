@@ -36,11 +36,13 @@ from src.infer.recognize import (
 )
 from src.localize import Localizer
 from src.localize.level_reader import LevelReader
+from src.timers import RBarDetector, load_r_bar, merge_events, scan_video_events
 
 # BGR
 COLOR_BAR = (0, 0, 255)
 COLOR_CROP = (0, 255, 0)
 COLOR_LEVEL = (255, 0, 0)
+COLOR_RBAR = (255, 0, 255)
 
 
 def render_combined(
@@ -52,6 +54,7 @@ def render_combined(
     classes: List[str],
     loc: Localizer,
     reader: LevelReader | None,
+    r_bar: RBarDetector | None = None,
     flash_sec: float = 0.6,
 ) -> None:
     cap = cv2.VideoCapture(video_path)
@@ -81,6 +84,13 @@ def render_combined(
                 frame, f"{d.champion} {d.score:.2f}", (x, max(14, y - 6)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, COLOR_CROP, 2, cv2.LINE_AA,
             )
+            if r_bar is not None:
+                _, r_roi, r_present = r_bar.score(rgb, d.bar)
+                rx, ry, rw, rh = r_roi
+                cv2.rectangle(
+                    frame, (rx, ry), (rx + rw, ry + rh),
+                    COLOR_RBAR if r_present else (128, 0, 128), 2,
+                )
             if reader is not None:
                 dbg = reader.read_debug(rgb, d.bar)
                 lbox = dbg.get("box")
@@ -118,7 +128,7 @@ def render_combined(
                 1.4, (0, 80, 255), 3, outline_thick=6,
             )
 
-        legend = "red=bar  green=crop  blue=level"
+        legend = "red=bar  green=crop  blue=level  magenta=r_bar"
         cv2.putText(
             frame, legend, (8, h - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
             (220, 220, 220), 1, cv2.LINE_AA,
@@ -162,6 +172,19 @@ def run(
         track=icfg.get("track") or None,
     )
 
+    loc = Localizer.from_config(cfg.section("localize"), base_dir=".")
+    r_bar = load_r_bar(cfg, base_dir=".")
+    if r_bar is not None:
+        r_bar_cfg = cfg.section("timers").get("r_bar") or {}
+        ability = str(r_bar_cfg.get("ability", "R"))
+        stride = int(r_bar_cfg.get("scan_stride_frames", 1))
+        r_events = scan_video_events(
+            video_path, loc, r_bar, ability=ability, stride_frames=stride,
+        )
+        if r_events:
+            print(f"  (+{len(r_events)} {ability} from r_bar icon detector)")
+        events = merge_events(events, r_events)
+
     stem = Path(video_path).stem
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +195,6 @@ def run(
     for e in events:
         print(f"  {e['time']:8.2f}s  {e['ability']:<5} ({e['score']:.2f})")
 
-    loc = Localizer.from_config(cfg.section("localize"), base_dir=".")
     lr_cfg = cfg.section("localize").get("level_read") or {}
     reader = (
         LevelReader.from_config(lr_cfg, base_dir=".")
@@ -184,6 +206,7 @@ def run(
     print(f"Rendering {overlay_path} ...")
     render_combined(
         video_path, overlay_path, times, probs, events, classes, loc, reader,
+        r_bar=r_bar,
     )
     print(f"Done -> {overlay_path}")
 

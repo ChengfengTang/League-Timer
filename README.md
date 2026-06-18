@@ -174,8 +174,9 @@ what extra footage to record.
 
 ## Live (real-time screen capture)
 
-Watch your screen *as you play* and print `CAST W/E/R/Flash` the moment an
-ability fires (same model + thresholds as the offline recognizer):
+Watch your screen *as you play* and print `CAST W/E/R/Flash` (and **`infer.emit`**
+classes when configured) the moment an ability fires. **Detection only** — no
+cooldown timers or `timers.on_cast` rules (those are web-app only):
 
 ```bash
 python -m src.infer.live --config configs/{ChampionName}.yaml \
@@ -209,7 +210,8 @@ Useful flags:
 
 A local web app that tracks ability and summoner-spell cooldowns. Add a
 champion and the model auto-starts timers when it detects a cast; click any
-ability/summoner to start it manually.
+ability/summoner to start it manually. **Only the web app** runs cooldown math
+and `timers.on_cast` rules; offline/CLI paths are spell detection only.
 
 ```bash
 python -m src.app.server      # then open http://127.0.0.1:8000
@@ -222,10 +224,16 @@ How it works:
 - Adding a champion that has both `configs/{ChampionName}.yaml` and
   `models/{ChampionName}/best.pt` starts a `LiveDetector`
   (`src/app/detector.py`, the same tuned capture/inference loop as
-  `src.infer.live`). Detected `Flash`/`W`/`E`/`R` casts auto-start that
-  champion's timers.
-- Champions without a model are **manual-only** — the card shows only tracked
-  abilities/summoners from the config (`infer.track` + `timers.summoners`).
+  `src.infer.live`). Detected casts flow through **`src/app/cast_rules.py`**
+  before updating timers.
+- **Detection sources:** VFX model (`infer.track` + `infer.emit`), optional
+  **`timers.r_bar`** HUD plugin, and manual UI clicks — all normalized to cast
+  events with the same rule pipeline.
+- **`infer.track`** — abilities with UI timers; implicit `start_cooldown` on cast.
+- **`infer.emit`** — emit-only classes (no UI slot); run `timers.on_cast` side
+  effects (e.g. Ezreal Q → shave 1.5s off ticking W/E/R).
+- Champions without a model are **manual-only** — the card shows tracked
+  abilities/summoners from the config (`infer.track` + r_bar ability + `timers.summoners`).
 - Ability base CDs live in `configs/{ChampionName}.yaml` (`timers.abilities`).
   Summoner base CDs use a built-in table in `src/app/cooldowns.py` (Flash 300,
   Ignite 180, etc.). Ability haste, summoner haste, and per-rank scaling are
@@ -254,7 +262,16 @@ Restart the web server after syncing so it picks up the new yaml.
 Config (`configs/{ChampionName}.yaml`):
 
 ```yaml
+infer:
+  track: [W, E, R, Flash]   # UI timers + start cooldown on cast
+  emit: [Q]                 # optional: cast events for rules only (no UI slot)
+
 timers:
+  on_cast:                  # web app only — see docs/champion-tracking.md
+    Q:
+      reduce_others: { sec: 1.5, targets: [W, E, R] }
+    R:
+      skip_if_ticking: true  # typical with timers.r_bar
   abilities:        # base CDs from Data Dragon — run scripts/sync_timer_cds.py
     W: 8
     E: [26, 23, 20, 17, 14]
@@ -262,6 +279,10 @@ timers:
   summoners: [Flash]   # summoners this champion's model can auto-detect
   class_to_key: {}     # optional model-class -> timer-key remap (identity if empty)
 ```
+
+Per-champion patterns (standard kit, distractor Q, r_bar ult): see
+[`docs/champion-tracking.md`](docs/champion-tracking.md). Domain terms:
+[`CONTEXT.md`](CONTEXT.md).
 
 Env overrides: `LEAGUE_TIMER_HOST`, `LEAGUE_TIMER_PORT` (default `127.0.0.1:8000`),
 `LEAGUE_TIMER_DEVICE` (`auto`|`cpu`|`mps`|`cuda`).
@@ -275,9 +296,11 @@ Env overrides: `LEAGUE_TIMER_HOST`, `LEAGUE_TIMER_PORT` (default `127.0.0.1:8000
 
 ## Adding a new champion
 
-Copy an existing champion config to `configs/{ChampionName}.yaml`, adjust `champion` and
-(if the kit needs it) the class list and thresholds, then repeat steps 1-6. Seed
-ability CDs from Data Dragon:
+Copy an existing champion config to `configs/{ChampionName}.yaml`, pick the closest
+**pattern** (standard / Ezreal distractor+emit / Ahri r_bar), adjust `champion` and
+thresholds, then repeat steps 1–6. Agent playbook: [`AGENTS.md`](AGENTS.md).
+Per-champion reference: [`docs/champion-tracking.md`](docs/champion-tracking.md).
+Seed ability CDs from Data Dragon:
 
 ```bash
 python scripts/sync_timer_cds.py {ChampionName}
@@ -300,10 +323,11 @@ src/
   localize/     champion localization (healthbar + name templates) + preview
   train/        model + training loop
   infer/        sliding-window recognizer + evaluation + live screen capture
-  app/          web app: FastAPI server, cooldown engine, LiveDetector, static UI
+  app/          web app: FastAPI server, cast_rules, cooldown engine, LiveDetector, static UI
 models/         trained checkpoints (git-ignored; see below)
 outputs/        predicted events + overlay videos (git-ignored)
-AGENTS.md       detection tuning notes (recall > precision)
+AGENTS.md       champion onboarding + detection tuning (recall > precision)
+CONTEXT.md      domain glossary (cast event, infer.emit, timer rules)
 ```
 
 `models/` is git-ignored for the same reason as `data/{ChampionName}/clips/`: checkpoints are

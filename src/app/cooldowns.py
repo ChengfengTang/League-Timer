@@ -7,6 +7,9 @@ League formula from the original app::
 
 Abilities pick their base CD from a per-rank table; summoners use a flat base
 CD with summoner spell haste.
+
+Cast events from auto-detection and manual clicks flow through
+:func:`src.app.cast_rules.apply_cast_event` and per-champion ``timers.on_cast`` rules.
 """
 from __future__ import annotations
 
@@ -15,6 +18,11 @@ import time
 import uuid
 from typing import Dict, List, Optional, Union
 
+from src.app.cast_rules import (
+    AbilityCastRules,
+    CastEvent,
+    apply_cast_event,
+)
 from src.app.skill_order import parse_skill_order, ranks_at_level
 
 # Base cooldowns for summoners we might track (seconds).
@@ -83,6 +91,16 @@ class _Slot:
             return 0.0
         return max(0.0, self.ends_at - now)
 
+    def reduce_remaining(self, now: float, sec: float) -> bool:
+        """Shave ``sec`` off an active cooldown; no-op if already ready."""
+        rem = self.remaining(now)
+        if rem <= 0.05:
+            return False
+        new_rem = max(0.0, rem - float(sec))
+        self.ends_at = now + new_rem
+        self.total = new_rem
+        return True
+
     def view(self, now: float, effective_cd: Optional[float] = None) -> Dict:
         rem = self.remaining(now)
         eff = effective_cd if effective_cd is not None else self.base_cd()
@@ -110,6 +128,7 @@ class _Champion:
         skill_order: Optional[Dict[int, Dict[str, int]]] = None,
         level_auto: bool = False,
         detection_lag_sec: float = 0.0,
+        cast_rules: Optional[Dict[str, AbilityCastRules]] = None,
     ) -> None:
         self.id = uuid.uuid4().hex[:8]
         self.name = name
@@ -122,6 +141,7 @@ class _Champion:
         self.summoner_haste = 0
         self.detector_status: Dict = {}
         self.class_to_key = dict(class_to_key or {})
+        self.cast_rules: Dict[str, AbilityCastRules] = dict(cast_rules or {})
 
         self.abilities: Dict[str, _Slot] = {
             key: _Slot(key, key, "ability", _parse_cooldowns(cd))
@@ -191,6 +211,7 @@ class CooldownEngine:
         skill_order: Optional[Dict] = None,
         level_auto: bool = False,
         detection_lag_sec: float = 0.0,
+        cast_rules: Optional[Dict[str, AbilityCastRules]] = None,
     ) -> Dict:
         with self._lock:
             champ = _Champion(
@@ -202,6 +223,7 @@ class CooldownEngine:
                 skill_order=parse_skill_order(skill_order),
                 level_auto=level_auto,
                 detection_lag_sec=detection_lag_sec,
+                cast_rules=cast_rules,
             )
             self._champions[champ.id] = champ
             return champ.view(time.monotonic())
@@ -210,19 +232,36 @@ class CooldownEngine:
         with self._lock:
             return self._champions.pop(champion_id, None) is not None
 
-    def trigger(self, champion_id: str, key: str,
-                total: Optional[float] = None) -> bool:
+    def on_cast_event(
+        self,
+        champion_id: str,
+        event: CastEvent,
+        *,
+        total_override: Optional[float] = None,
+    ) -> bool:
         now = time.monotonic()
         with self._lock:
             champ = self._champions.get(champion_id)
             if champ is None:
                 return False
-            slot = champ.slot(key)
-            if slot is None:
-                return False
-            eff = total if total is not None else champ._effective_total(slot)
-            slot.trigger(now, eff)
-            return True
+            return apply_cast_event(
+                champ, event, champ.cast_rules, now, total_override=total_override,
+            )
+
+    def trigger(self, champion_id: str, key: str,
+                total: Optional[float] = None) -> bool:
+        slot_exists = False
+        with self._lock:
+            champ = self._champions.get(champion_id)
+            if champ is not None and champ.slot(key) is not None:
+                slot_exists = True
+        if not slot_exists:
+            return False
+        return self.on_cast_event(
+            champion_id,
+            CastEvent(ability=key, source="manual"),
+            total_override=total,
+        )
 
     def reset(self, champion_id: str, key: str) -> bool:
         with self._lock:
@@ -235,19 +274,13 @@ class CooldownEngine:
             slot.reset()
             return True
 
-    def on_detection(self, champion_id: str, ability_class: str) -> bool:
-        with self._lock:
-            champ = self._champions.get(champion_id)
-            if champ is None:
-                return False
-            key = champ.class_to_key.get(ability_class, ability_class)
-            slot = champ.slot(key)
-            if slot is None:
-                return False
-            now = time.monotonic()
-            eff = champ._effective_total(slot)
-            slot.trigger(now - champ.detection_lag_sec, eff)
-            return True
+    def on_detection(self, champion_id: str, ability_class: str,
+                     source: str = "vfx", at: Optional[float] = None) -> bool:
+        """Legacy entry point; prefer :meth:`on_cast_event`."""
+        return self.on_cast_event(
+            champion_id,
+            CastEvent(ability=ability_class, source=source, time=at),
+        )
 
     def set_level(self, champion_id: str, level: int) -> bool:
         with self._lock:

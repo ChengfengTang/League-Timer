@@ -41,7 +41,7 @@ from src.infer.recognize import _localizer_from_ckpt, load_model
 from src.localize.level_reader import LevelReader
 
 # Callback signatures.
-EventCallback = Callable[[str, float, float], None]      # (ability, score, clip_time)
+EventCallback = Callable[[str, float, float, str], None]  # ability, score, time, source
 StatusCallback = Callable[[Dict], None]                  # arbitrary status dict
 
 
@@ -96,6 +96,20 @@ class LiveDetector:
         lcfg = _live_cfg(icfg)
         self.device = pick_device(device_str)
 
+        track_list = [str(x) for x in (icfg.get("track") or [])]
+        emit_list = [str(x) for x in (icfg.get("emit") or [])]
+        emit_classes: List[str] = []
+        seen: set[str] = set()
+        for key in track_list + emit_list:
+            if key not in seen:
+                seen.add(key)
+                emit_classes.append(key)
+        self._emit_classes = emit_classes or None
+
+        timers_cfg = cfg.section("timers")
+        r_bar_cfg = timers_cfg.get("r_bar") or {}
+        self._r_bar_ability = str(r_bar_cfg.get("ability", "R"))
+
         self.model, self.ckpt = load_model(checkpoint, self.device)
         self.classes: List[str] = self.ckpt["classes"]
         self.num_frames = int(self.ckpt["num_frames"])
@@ -127,9 +141,13 @@ class LiveDetector:
             nms_window_sec=float(lcfg.get("nms_window_sec", 1.0)),
             peak_only=bool(lcfg.get("peak_only", False)),
             min_margin=float(lcfg.get("min_margin", 0.0)),
-            track=icfg.get("track") or None,
+            track=self._emit_classes,
         )
         self.loc_cache = {"sec": float(lcfg.get("localize_cache_sec", 0.0))}
+
+        from src.timers import load_r_bar
+
+        self.r_bar = load_r_bar(cfg, base_dir=".")
 
         self.region = resolve_region(monitor, region)
         self._thread: Optional[threading.Thread] = None
@@ -197,10 +215,22 @@ class LiveDetector:
 
                 for e in self.detector.push(center_t, probs):
                     if self.on_event:
-                        self.on_event(e["ability"], float(e["score"]), float(e["time"]))
+                        self.on_event(
+                            e["ability"], float(e["score"]), float(e["time"]), "vfx",
+                        )
 
                 level_payload = {}
                 det = self.loc_cache.get("det")
+                if det is not None and self.r_bar is not None:
+                    center = clip[len(clip) // 2]
+                    r_score = self.r_bar.update(center, det.bar, now)
+                    if r_score is not None and self.on_event:
+                        self.on_event(
+                            self._r_bar_ability, float(r_score), float(center_t), "r_bar",
+                        )
+                    _, r_roi, r_present = self.r_bar.score(center, det.bar)
+                    level_payload["r_bar_roi"] = list(r_roi)
+                    level_payload["r_bar_present"] = r_present
                 if self.level_reader is not None and det is not None:
                     center = clip[len(clip) // 2]
                     dbg = self.level_reader.read_debug(center, det.bar)

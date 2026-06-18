@@ -73,13 +73,14 @@ train:
 
 infer:
   stride_sec: 0.1
-  # Flash stays in the model; manual Flash timer until tuned (no Ezreal-style blink).
-  # Q is short CD — expect some false positives; tune thresholds if needed (AGENTS.md).
+  # Q/W/E + Flash via model only (r_bar disabled for now).
   track:
     - Q
     - W
     - E
-    - R
+    - Flash
+  # R via timers.r_bar (charge icons under health bar), not the VFX model.
+  # Detector: src/timers/r_bar.py — enabled only in this yaml's timers.r_bar block.
   default_threshold: 0.98
   thresholds:
     Q: 0.98
@@ -98,7 +99,7 @@ infer:
       W: 0.75
       E: 0.75
       R: 0.90
-      Flash: 0.98
+      Flash: 0.85
     peak_only: false
     min_margin: 0.08
     nms_window_sec: 0.6
@@ -107,12 +108,28 @@ infer:
 # Base CDs from Data Dragon patch 16.12.1 — run sync_timer_cds.py after patches.
 timers:
   detection_lag_sec: 1.0
+  on_cast:
+    R:
+      skip_if_ticking: true
+  # Spirit Rush via charge icons — disabled; using model-only Q/W/E/Flash for now.
+  r_bar:
+    enabled: false
+    below_bar: 0
+    height: 26
+    width_pad: 6
+    icon_strip_fraction: 0.48
+    icon_template: configs/templates/ahri_r_icon.png
+    match_threshold: 0.62
+    hsv_fallback: false
+    refractory_sec: 3.0
+    rearm_after_absent_sec: 1.5   # icons gone this long before next 0->N trigger
   abilities:
     Q: 7
     W: [9, 8, 7, 6, 5]
     E: 12
     R: [140, 120, 100]
-  summoners: []
+  summoners:
+    - Flash
   level_auto: true
   skill_order: {}
   class_to_key: {}

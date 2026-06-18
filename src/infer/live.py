@@ -366,8 +366,8 @@ def run(config_path: str, checkpoint: str, device_str: str, monitor: int,
     if det.detector.track:
         print(f"Tracking: {', '.join(det.detector.track)}")
 
-    def on_event(ability: str, score: float, t: float) -> None:
-        print(f"[{t:7.1f}s]  CAST  {ability:<5} ({score:.2f})", flush=True)
+    def on_event(ability: str, score: float, t: float, source: str = "vfx") -> None:
+        print(f"[{t:7.1f}s]  CAST  {ability:<5} ({score:.2f}) [{source}]", flush=True)
 
     def on_status(s: Dict) -> None:
         if not verbose:

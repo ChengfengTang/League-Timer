@@ -36,6 +36,7 @@ from src.common.config import Config
 from src.common.torch_utils import pick_device
 from src.dataset.clip_dataset import ClipTransform
 from src.localize import Localizer
+from src.timers import load_r_bar, merge_events, scan_video_events
 from src.train.model import build_model
 
 
@@ -296,6 +297,19 @@ def run(config_path: str, video_path: str, checkpoint: str, out_dir: str,
         min_margin=float(icfg.get("min_margin", 0.0)),
         track=icfg.get("track") or None,
     )
+
+    r_bar = load_r_bar(cfg, base_dir=".")
+    if r_bar is not None:
+        loc = Localizer.from_config(cfg.section("localize"), base_dir=".")
+        r_bar_cfg = cfg.section("timers").get("r_bar") or {}
+        ability = str(r_bar_cfg.get("ability", "R"))
+        stride = int(r_bar_cfg.get("scan_stride_frames", 1))
+        r_events = scan_video_events(
+            video_path, loc, r_bar, ability=ability, stride_frames=stride,
+        )
+        if r_events:
+            print(f"  (+{len(r_events)} {ability} from r_bar icon detector)")
+        events = merge_events(events, r_events)
 
     stem = Path(video_path).stem
     out_dir = Path(out_dir)

@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Set, Union
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
+from src.app.cast_rules import AbilityCastRules, CastEvent, load_cast_rules
 from src.app.cooldowns import CooldownEngine
 from src.common.config import Config
 
@@ -53,13 +54,17 @@ def timer_spec_from_config(
     Dict,
     bool,
     float,
+    Dict[str, AbilityCastRules],
 ]:
-    """Read tracked abilities, summoners, skill order, and class mapping."""
+    """Read tracked abilities, summoners, skill order, class mapping, and cast rules."""
     cfg = Config.load(str(config_path))
     infer = cfg.section("infer")
     timers = cfg.section("timers")
 
     track = {str(k) for k in (infer.get("track") or [])}
+    r_bar = timers.get("r_bar") or {}
+    if r_bar.get("enabled"):
+        track.add(str(r_bar.get("ability", "R")))
     summoners = [str(s) for s in (timers.get("summoners") or [])]
     summoner_set = set(summoners)
 
@@ -78,7 +83,16 @@ def timer_spec_from_config(
     skill_order = timers.get("skill_order") or {}
     level_auto = bool(timers.get("level_auto", bool(skill_order)))
     detection_lag_sec = float(timers.get("detection_lag_sec", 0.0))
-    return ability_cds, summoners, class_to_key, skill_order, level_auto, detection_lag_sec
+    cast_rules = load_cast_rules(infer, timers)
+    return (
+        ability_cds,
+        summoners,
+        class_to_key,
+        skill_order,
+        level_auto,
+        detection_lag_sec,
+        cast_rules,
+    )
 
 
 class DetectionManager:
@@ -103,8 +117,11 @@ class DetectionManager:
 
         engine = self.engine
 
-        def on_event(ability: str, score: float, t: float) -> None:
-            engine.on_detection(champion_id, ability)
+        def on_event(ability: str, score: float, t: float, source: str = "vfx") -> None:
+            engine.on_cast_event(
+                champion_id,
+                CastEvent(ability=ability, source=source, time=t),
+            )
 
         def on_status(status: Dict) -> None:
             level = status.get("level")
@@ -215,9 +232,17 @@ async def _handle_message(app: FastAPI, data: Dict) -> Optional[Dict]:
         skill_order: Dict = {}
         level_auto = False
         detection_lag_sec = 0.0
+        cast_rules: Dict[str, AbilityCastRules] = {}
         if config_path is not None:
-            ability_cds, summoner_keys, class_to_key, skill_order, level_auto, detection_lag_sec = (
-                timer_spec_from_config(config_path))
+            (
+                ability_cds,
+                summoner_keys,
+                class_to_key,
+                skill_order,
+                level_auto,
+                detection_lag_sec,
+                cast_rules,
+            ) = timer_spec_from_config(config_path)
         will_auto = model_path is not None and config_path is not None and not manager.busy
         champ = engine.add_champion(
             name,
@@ -228,6 +253,7 @@ async def _handle_message(app: FastAPI, data: Dict) -> Optional[Dict]:
             skill_order=skill_order,
             level_auto=level_auto,
             detection_lag_sec=detection_lag_sec,
+            cast_rules=cast_rules,
         )
         if will_auto:
             started = await manager.maybe_start(champ["id"], config_path, model_path)

@@ -393,7 +393,10 @@ offline recognizer scans a video with a sliding window and applies:
 - an optional `min_margin` over the next-best ability score
 - optional `peak_only` filtering, so only local score peaks emit events
 - temporal non-max suppression (`nms_window_sec`) to avoid duplicate events
-- `infer.track`, which restricts which classes are emitted
+- `infer.track`, which restricts which classes are emitted as events in **offline**
+  recognize/evaluate (and which get UI timers in the web app).
+- `infer.emit` (web app live detector only today) — additional classes that fire
+  cast events for timer rules without a UI timer slot.
 
 The offline settings can be stricter because scanning every 0.1 seconds gives
 dense probability curves and local peaks are easy to find. Live inference is
@@ -406,14 +409,28 @@ hiding real events.
 
 ### 7. Cooldown Timer UI
 
-The web app wraps the live detector with a cooldown engine. It serves a local UI
-with FastAPI and streams timer state over WebSocket. Adding Ezreal starts the
-detector if both `configs/{ChampionName}.yaml` and `models/{ChampionName}/best.pt` exist.
+The web app wraps the live detector with a cooldown engine and a **cast-event
+rule layer** (`src/app/cast_rules.py`). It serves a local UI with FastAPI and
+streams timer state over WebSocket. Adding a modeled champion starts the detector
+when both `configs/{ChampionName}.yaml` and `models/{ChampionName}/best.pt` exist.
 
-The UI only shows abilities and summoners that are actually tracked. For Ezreal,
-that means `W`, `E`, `R`, and `Flash`, not every summoner spell and not Q.
+**Web app only:** offline `recognize` / `evaluate` and `infer.live` CLI perform
+spell detection; they do not simulate cooldowns or apply `timers.on_cast`.
 
-Cooldowns now account for:
+All cast signals normalize to a **cast event** `{ability, source, time}` where
+`source` is `vfx`, `r_bar`, or `manual`, then flow through **`timers.on_cast`**
+rules before mutating timer slots:
+
+- **`infer.track`** — abilities shown in the UI; implicit `start_cooldown` on cast.
+- **`infer.emit`** — emit-only classes (no UI slot); e.g. Ezreal Q triggers
+  `reduce_others` on ticking W/E/R.
+- **`timers.r_bar`** — optional HUD plugin for ult charge icons (Ahri R); events
+  use the same rule pipeline with `skip_if_ticking` to ignore charge flicker.
+
+The UI only shows abilities and summoners that are tracked. For Ezreal, that means
+`W`, `E`, `R`, and `Flash` — not Q (Q is in `infer.emit` for passive CD shave only).
+
+Cooldowns account for:
 
 - ability rank
 - ability haste
@@ -461,8 +478,8 @@ classes:
   - Flash
 ```
 
-`Q` stays here because it improves discrimination, even though it is not emitted
-as a tracked timer.
+`Q` stays here because it improves discrimination. It may be in **`infer.emit`**
+(not `infer.track`) when the champion needs side-effect rules without a Q timer.
 
 ### `clip`
 
@@ -527,7 +544,8 @@ Controls fine-tuning.
 Controls offline event detection over recorded videos.
 
 - `stride_sec`: how often to classify a window.
-- `track`: classes that should be emitted as events.
+- `track`: classes emitted as events in offline recognize/evaluate (and UI timers in the web app).
+- `emit`: optional emit-only classes for the **web app live detector** (timer rules, no UI slot).
 - `default_threshold`: fallback confidence threshold.
 - `thresholds`: per-class thresholds.
 - `nms_window_sec`: suppress duplicate detections close together in time.
@@ -545,18 +563,25 @@ localizer overhead and smoothing over short localization misses.
 
 ### `timers`
 
-Controls the web app timer surface.
+Controls the web app timer surface and cast-event rules (`src/app/cast_rules.py`).
 
 - `abilities`: base cooldowns by ability rank.
 - `summoners`: summoners this model can detect and this UI should show.
-- `class_to_key`: optional remapping if a model class name differs from the timer
-  key.
+- `on_cast`: per-ability rules — `skip_if_ticking`, `reduce_others`, etc. Tracked
+  abilities get implicit `start_cooldown` unless overridden.
+- `r_bar`: optional HUD icon detector for abilities not tracked via VFX (see
+  `src/timers/r_bar.py`).
+- `detection_lag_sec`: backdate auto-detected casts (VFX/r_bar only; manual clicks unaffected).
+- `class_to_key`: optional remapping if a model class name differs from the timer key.
 
 For Ezreal, `infer.track` plus `timers` means the UI shows only:
 
 ```text
 W, E, R, Flash
 ```
+
+With `infer.emit: [Q]` and `on_cast.Q.reduce_others`, Q casts shave 1.5s off
+ticking W/E/R without a Q timer row.
 
 ## What This Project Demonstrates
 

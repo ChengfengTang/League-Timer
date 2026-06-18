@@ -107,6 +107,9 @@ infer:
     - E
     - R
     - Flash
+  # Emit-only: Rising Spell Force shaves CDs off W/E/R when Q lands (no Q timer).
+  emit:
+    - Q
   # Per-class confidence thresholds. Missing classes fall back to default.
   # Bias toward recall (see AGENTS.md): missing a cast is worse than a false alarm.
   default_threshold: 0.98
@@ -127,6 +130,7 @@ infer:
     stride_sec: 0.2
     default_threshold: 0.85
     thresholds:
+      Q: 0.75
       W: 0.7
       E: 0.7
       R: 0.95
@@ -143,6 +147,9 @@ timers:
   # Backdate auto-detected casts so the countdown matches in-game CDs (~1–1.5s
   # capture + inference lag). Manual clicks are unaffected.
   detection_lag_sec: 1.5
+  on_cast:
+    Q:
+      reduce_others: { sec: 1.5, targets: [W, E, R] }
   abilities:
     W: 8                         # Essence Flux
     E: [26, 23, 20, 17, 14]       # Arcane Shift
